@@ -60,29 +60,16 @@ def split_on_colon(data):
 def only_yearAndmonth(data):
     return np.vstack(np.array([d[:7] for d in data]))
 
-def plotting(data,number,p):
-
-    ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
-    
-    all_months=split_on_dash(data[:,0]) # splits time stamps up into year, month, rest
-    year_months = only_yearAndmonth(data[:,0])
-    months=np.unique(year_months) # months data was taken for
-    Weeks=[]
-    avg_hr_months=[]
-    avg_hr_active_days=[]
-    avg_hr_weekly=[]
-
+def months_calc(data,number,time_index):
+    # finds the unique months in the data and returns them
+    months=np.unique(time_index.month) # finds the unique months in the data
     for m in months:
-        month_data=data[np.where(year_months[:,0]==m)] # generates only the heart rate data for the current month
-        
-        """individiual months""" 
-
-        month_x=pd.to_datetime(month_data[:,0], format='ISO8601',utc=True) # turns the timestamps for this months data into datetime objects that can be interpretted my matplotlib
+        mask=time_index.month==m # creates a mask for the current month
+        month_data=data[mask]
+        month_x=month_data['start']
         month_y = np.array([
             np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(month_data[:,2],'[]')])
-        avg_hr_months.append(np.average(month_y))
-        print(m)
+            for item in np.char.strip(month_data['value'].to_numpy('str'),'[]')])
         plt.title('Heart rate for month {}'.format(m))
         plt.plot(month_x,month_y,label='HR data') # plots the heart rate data for this month
         plt.xlabel('Date')
@@ -94,9 +81,58 @@ def plotting(data,number,p):
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
         plt.close()
+    
 
+    return months
+
+def week_calc(data,number,time_index):
+    # finds the unique weeks in the data and returns them
+    weeks=np.unique(time_index.isocalendar().week) # finds the unique weeks in the data
+    for w in weeks:
+        mask=time_index.isocalendar().week==w # creates a mask for the current week
+        week_data=data[mask]
+        week_x=week_data['start']
+        week_y = np.array([
+            np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
+            for item in np.char.strip(week_data['value'].to_numpy('str'),'[]')])
+        plt.title('Heart rate for week {}'.format(w))
+        plt.plot(week_x,week_y,label='HR data') # plots the heart rate data for this week
+        plt.xlabel('Date')
+        plt.ylabel('Heart rate [bpm]')
+        plt.tick_params(axis='x',labelrotation=45,length=0.1)
+        plt.tight_layout()
+        plt.show()
+        plt.legend()
+        #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
+        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
+        plt.close()
+    
+    return weeks
+
+def plotting(data,number,p,months_on=True,weeks_on=True):
+    Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
+    ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
+    time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are in datetime format
+    months=np.unique(time_index.month) # finds the unique months in the data
+    print('Months in data: {}'.format(months))
+    # all_months=split_on_dash(data[:,0]) # splits time stamps up into year, month, rest
+    # year_months = only_yearAndmonth(data[:,0])
+    # Weeks=[]
+    # avg_hr_months=[]
+    # avg_hr_active_days=[]
+    # avg_hr_weekly=[]
+    
+    if months_on:
+        months=months_calc(data,number,time_index)
+
+
+    print(time_index.day_of_week)
+
+    for m in months:
 
         """ individual weeks"""
+
+
 
         days=split_on_T(split_on_dash(month_data[:,0])[:,2]) # splits up the month into the days in the month
         int_days=np.array([int(numeric_string) for numeric_string in days[:,0]]) # turns the day numbers into integers
@@ -565,6 +601,8 @@ def main():
         
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
+        heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
+        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis)
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
