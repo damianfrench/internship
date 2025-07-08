@@ -28,17 +28,8 @@ def sortingHeartRate(number,
         heartRate=(pd.read_csv(f'/data/t/smartWatch/patients/volunteerData/{number}/raw_hr_hr.csv',header=0))
 
     heartRate['start']=pd.to_datetime(heartRate['start'], format='ISO8601',utc=True) # converts the timestamps to datetime objects
-    heartRate=heartRate.sort_values(by='start')
-    print(heartRate)
-    
-    heartRateData = heartRate[['start','duration','value']]
-    print(heartRateData)
-    #splits the timestamps to seperate out the month, day, hour and minute and then orders them 
-    brokenData=split_on_dash(heartRateData[:,0])
-    brokenData2=split_on_T(brokenData[:,2])
-    brokenData3=split_on_colon(brokenData2[:,1])
-    sortedData=heartRateData[np.lexsort((brokenData3[:,2],brokenData3[:,1],brokenData3[:,0],brokenData2[:,0],brokenData[:,1],brokenData[:,0]))] # heart rate data sorted by time
-    sortedData[:,0]=split_on_plus(sortedData[:,0])[:,0]
+    sortedData=heartRate.sort_values(by='start')
+    print(sortedData)
     return sortedData
 
 def sortingActivityData(number,
