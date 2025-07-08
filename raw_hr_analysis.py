@@ -27,7 +27,12 @@ def sortingHeartRate(number,
     else:
         heartRate=(pd.read_csv(f'/data/t/smartWatch/patients/volunteerData/{number}/raw_hr_hr.csv',header=0))
 
-    heartRateData = heartRate[['start','duration','value']].to_numpy(dtype='str')
+    heartRate['start']=pd.to_datetime(heartRate['start'], format='ISO8601',utc=True) # converts the timestamps to datetime objects
+    heartRate=heartRate.sort_values(by='start')
+    print(heartRate)
+    
+    heartRateData = heartRate[['start','duration','value']]
+    print(heartRateData)
     #splits the timestamps to seperate out the month, day, hour and minute and then orders them 
     brokenData=split_on_dash(heartRateData[:,0])
     brokenData2=split_on_T(brokenData[:,2])
