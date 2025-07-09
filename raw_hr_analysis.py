@@ -81,7 +81,7 @@ def months_calc(data,number,time_index):
         plt.close()
     
 
-    return months
+    return np.average(month_y)
 
 def week_calc(data,number,time_index):
     # finds the unique weeks in the data
@@ -160,9 +160,61 @@ def total_timespan(data,number):
     plt.legend()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
     plt.close()
+    return time_y
 
 def days_and_nights(data,number,time_index):
-    print(time_index.hour)
+    night_mask=(time_index.hour>=20) | (time_index.hour<6) # creates a mask for the night time data
+    day_mask=(time_index.hour<20) | (time_index.hour>=6) # creates a mask for the day time data
+    night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
+    day_data= data[day_mask] # generates the other data for comparison
+    night_y=np.array([
+            np.mean([int(x) for x in item.split(',')]) # Split and convert the BPM data to integers, then average if there are multiple readings
+            for item in np.char.strip(night_data['value'].to_numpy('str'),'[]')])
+    day_y=np.array([
+            np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
+            for item in np.char.strip(day_data['value'].to_numpy('str'),'[]')])
+    night_x=night_data['start']
+    day_x=day_data['start']
+    plt.title('Heart rates over study - nights only')
+    plt.plot(night_x,night_y,label='HR data')
+    plt.xlabel('Date')
+    plt.ylabel('Heart rate [bpm]')
+    plt.axhline(np.average(night_y),color='red')
+    plt.tick_params(axis='x',labelrotation=90,length=0.1)
+    plt.tight_layout()
+    plt.legend()
+    plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
+    plt.close()
+    df=resting_max_and_min(night_mask,day_mask,time_index,day_y,night_y)
+
+
+    return np.average(night_y),df
+
+def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
+    days_df=pd.DataFrame({'date':[],
+                          'avg_day':[],
+                          'min_day':[],
+                          'max_day':[]})
+    nights_df=pd.DataFrame({'date':[],
+                          'avg_night':[],
+                          'min_night':[],
+                          'max_night':[]})
+    days=np.unique(time_index.normalize()) # normalises the time index to remove the time component
+    for i in range(len(days)):
+        mask=time_index.normalize()[day_mask]==days[i]
+        day_vals=day_data[mask]
+        days_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.mean(day_vals),day_vals.min(),day_vals.max()]
+
+        mask=time_index.normalize()[night_mask]==days[i]
+        night_vals=night_data[mask]
+        try:
+            nights_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.mean(night_vals),night_vals.min(),night_vals.max()]
+        except:
+            nights_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.nan,np.nan,np.nan]
+
+    df=pd.merge(days_df,nights_df, on='date')
+    return df
+
 
 def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
     Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
@@ -178,70 +230,19 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
     # avg_hr_weekly=[]
     
     if months_on:
-        months=months_calc(data,number,time_index)
+        avg_hr_months=months_calc(data,number,time_index)
     if weeks_on:
         avg_week_hr=week_calc(data,number,time_index)
     if active_on:
         avg_hr_active_day=active_days_calc(data,number,time_index)
     if total_on:
-        total_timespan(data,number)
+        time_y=total_timespan(data,number)
     if day_and_night_on:
-        days_and_nights(data,number,time_index)    
+        avg_night,df=days_and_nights(data,number,time_index)    
         
-    
-    """only nights"""
-
-    split_only_time=split_on_colon(split_on_T(data[:,0])[:,1]) # splits time stamps up into hour, minute,seconds+tz, other(not important)
-    night_data=data[np.where((20<split_only_time[:,0].astype(int)) | (split_only_time[:,0].astype(int)<6))] # generates heart rate data only between 10pm and 6am
-    day_data=data[np.where((20>split_only_time[:,0].astype(int)) | (split_only_time[:,0].astype(int)>6))] # generates the other data for comparison
-    night_data_ts=np.vstack(np.char.split(night_data[:,0],'+'))[:,0]
-    night_x=pd.to_datetime(night_data_ts, format='ISO8601')
-    night_y=np.array([
-            np.mean([int(x) for x in item.split(',')]) # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(night_data[:,2],'[]')])
-    day_y=np.array([
-            np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
-            for item in np.char.strip(day_data[:,2],'[]')])
-    
-    plt.title('Heart rates over study - nights only')
-    plt.plot(night_x,night_y,label='HR data')
-    plt.xlabel('Date')
-    plt.ylabel('Heart rate [bpm]')
-    plt.axhline(np.average(night_y),color='red')
-    plt.tick_params(axis='x',labelrotation=90,length=0.1)
-    plt.tight_layout()
-    plt.legend()
-    plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
-    plt.close()
-
-    """resting and avg. hr day and night"""
-    days=split_on_T(day_data[:,0])
-    df=pd.DataFrame({'date': days[:,0], 'day_Heart_rate':day_y})
-    #print(df.groupby('date')['Heart_rate'].apply(list).to_list())
-    days_df=pd.DataFrame({'date':[],
-                          'avg_day':[],
-                          'min_day':[],
-                          'max_day':[]})
-    for i in range(len(np.unique(days[:,0]))):
-        mask=df['date']==np.unique(days[:,0])[i]
-        day_vals=df['day_Heart_rate'][mask]
-        days_df.loc[i]=[np.unique(days[:,0])[i],np.mean(day_vals),day_vals.min(),day_vals.max()]
-    nights=split_on_T(night_data[:,0])
-    df=pd.DataFrame({'date': nights[:,0], 'night_Heart_rate':night_y})
-    nights_df=pd.DataFrame({'date':[],
-                          'avg_night':[],
-                          'min_night':[],
-                          'max_night':[]})
-    
-    for i in range(len(np.unique(nights[:,0]))):
-        mask=df['date']==np.unique(nights[:,0])[i]
-        night_vals=df['night_Heart_rate'][mask]
-        nights_df.loc[i]=[np.unique(nights[:,0])[i],np.mean(night_vals),night_vals.min(),night_vals.max()]
-
-    df=pd.merge(days_df,nights_df, on='date')
 
     activities=np.concatenate(activities).tolist()
-    return 1/time_y,avg_hr_months,np.average(night_y),np.average(time_y),months,avg_hr_weekly,avg_hr_active_days,Weeks,activities,df
+    return 1/time_y,avg_hr_months,avg_night,np.average(time_y),months,avg_hr_weekly,avg_hr_active_days,Weeks,activities,df
 
 def detecting_crossover(log_F,log_n):
     best_split=None
@@ -570,7 +571,7 @@ def main():
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
         heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
-        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=False,weeks_on=False)
+        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=False,weeks_on=False,active_on=False,total_on=False)
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
