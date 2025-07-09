@@ -73,8 +73,9 @@ def months_calc(data,number,time_index):
         plt.ylabel('Heart rate [bpm]')
         plt.tick_params(axis='x',labelrotation=45,length=0.1)
         plt.tight_layout()
-        plt.show()
+        
         plt.legend()
+        plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
         plt.close()
@@ -101,8 +102,9 @@ def week_calc(data,number,time_index):
         plt.ylabel('Heart rate [bpm]')
         plt.tick_params(axis='x',labelrotation=45,length=0.1)
         plt.tight_layout()
-        plt.show()
+        
         plt.legend()
+        plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
@@ -135,6 +137,7 @@ def active_days_calc(data,number,time_index,patient):
         plt.tick_params(axis='x',labelrotation=90,length=0.1)
         plt.tight_layout()
         plt.legend()
+        plt.show()
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day.strftime('%Y-%m-%d')))
         plt.close()
     return avg_hr_active_days,active_dates
@@ -150,6 +153,7 @@ def total_timespan(data,number):
     plt.tick_params(axis='x',labelrotation=90,length=0.1)
     plt.tight_layout()
     plt.legend()
+    plt.show()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
     plt.close()
     return time_y.to_numpy(dtype=np.float64)
@@ -171,6 +175,7 @@ def days_and_nights(data,number,time_index):
     plt.tick_params(axis='x',labelrotation=90,length=0.1)
     plt.tight_layout()
     plt.legend()
+    plt.show()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
     df=resting_max_and_min(night_mask,day_mask,time_index,day_y,night_data)
@@ -310,7 +315,7 @@ def DFA(RR,number):
     F_s=np.array(F_s)
     return F_s,window_sizes
 
-def databasing(metrics,patient=True):
+def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
     if patient:
         con=sqlite3.connect('patient_metrics.db') # connects to database
     else:
@@ -543,10 +548,31 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,ax):
     return ax,m,interpolated[0]
     #plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}.png')
 
+def ECG_HRV(ECG_RR,patientNum):
+    ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
+    ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
+    plt.plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
+    plt.title('ECG HRV')
+    plt.ylabel('RR interval (s)')
+    plt.xlabel('Beats')
+    plt.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV".format(patientNum))
+    plt.close()
+    mask=detecting_outliers(ECG_RR)
+    ECG_RR=ECG_RR[mask] # removes outliers
+    
+    plt.plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
+    plt.title('ECG HRV Filtered')
+    plt.ylabel('RR interval (s)')
+    plt.xlabel('Beats')
+    plt.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV_Filtered".format(patientNum))
+    plt.close()
+    return ECG_RR # returns the RR intervals for the ECG data
+
 # %%
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
+    months_on,weeks_on,active_on,total_on,day_and_night_on=False,False,False,True,False
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -590,33 +616,17 @@ def main():
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
 
+        
+
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
-            individual_length=len(ECG_RR[:,0])
             heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
-            RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis)
+            RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
         
             print(patientNum)
         except:
             continue
-        ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
-        num_of_ECG=len(ECG_RR)/individual_length
-        ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
-        plt.plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
-        plt.title('ECG HRV')
-        plt.ylabel('RR interval (s)')
-        plt.xlabel('Beats')
-        plt.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV".format(patientNum))
-        plt.close()
-        mask=detecting_outliers(ECG_RR)
-        ECG_RR=ECG_RR[mask] # removes outliers
-        
-        plt.plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
-        plt.title('ECG HRV Filtered')
-        plt.ylabel('RR interval (s)')
-        plt.xlabel('Beats')
-        plt.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV_Filtered".format(patientNum))
-        plt.close()
+        ECG_RR=ECG_HRV(ECG_RR,patientNum)
         #surrogate_data=surrogate(RR[0])
 
         dfa,lag=DFA(RR[0],patientNum)
@@ -634,7 +644,7 @@ def main():
     avg_log_n=np.mean(np.vstack(scaling_patterns['log_n'].to_numpy()),axis=0)
     plt.plot(avg_log_n,avg_gradient)
     plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/average.png')
-    databasing(metrics,patient=patient_analysis)
+    databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
     
 
 
