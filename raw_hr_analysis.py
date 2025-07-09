@@ -59,6 +59,7 @@ def only_yearAndmonth(data):
     return np.vstack(np.array([d[:7] for d in data]))
 
 def months_calc(data,number,time_index):
+    avg_hr_per_month=[] # list to store the average heart rate for each month
     # finds the unique months in the data and returns them
     months=np.unique(time_index.month) # finds the unique months in the data
     for m in months:
@@ -79,9 +80,10 @@ def months_calc(data,number,time_index):
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
         plt.close()
+        avg_hr_per_month.append(np.average(month_y)) # averages the hr for that month
     
 
-    return np.average(month_y)
+    return avg_hr_per_month
 
 def week_calc(data,number,time_index):
     # finds the unique weeks in the data
@@ -90,7 +92,6 @@ def week_calc(data,number,time_index):
     for w in weeks:
         mask=(time_index.isocalendar().week==w).to_numpy() # creates a mask for the current week
         
-        print(data[mask])
         
         week_data=data[mask]
         week_x=week_data['start']
@@ -110,7 +111,7 @@ def week_calc(data,number,time_index):
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
     
-    return avg_hr_weekly
+    return weeks,avg_hr_weekly
 
 def active_days_calc(data,number,time_index):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
@@ -119,31 +120,30 @@ def active_days_calc(data,number,time_index):
     start_time_index=pd.DatetimeIndex(start).normalize() # ensures the activity start times are in datetime format
     active_dates= np.unique(start_time_index) # finds all unique dates activities were done on
     for day in active_dates: # loops through the days activity was done on
-            mask=normalised_time_index==day   
-            day_data=data[mask]
-            plt.title('Heart rate on  day with activity: {}'.format(day))
-            day_x= day_data['start']
-            day_y = np.array([
-                np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
-                for item in np.char.strip(day_data['value'].to_numpy('str'),'[]')])
-            plt.plot(day_x,day_y,label='HR data')
-            plt.xlabel('Data')
-            plt.ylabel('Heart rate [bpm]')
-            avg_hr_active_days.append(np.average(day_y))
-            day_mask=start_time_index==day # creates a mask for the current day
-            print(day_mask)
-            active_starts=start[day_mask] # generates the datetime objects for the activities done on the current day
-            active_ends=end[day_mask]
-            print(active_starts)
-            for i in active_starts:
-                plt.axvline(pd.to_datetime(i, format='ISO8601',utc=True),color='red')
-            for j in active_ends:
-                plt.axvline(pd.to_datetime(j, format='ISO8601',utc=True),color='red')
-            plt.tick_params(axis='x',labelrotation=90,length=0.1)
-            plt.tight_layout()
-            plt.legend()
-            plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day.strftime('%Y-%m-%d')))
-            plt.close()
+        mask=normalised_time_index==day   
+        day_data=data[mask]
+        plt.title('Heart rate on  day with activity: {}'.format(day))
+        day_x= day_data['start']
+        day_y = np.array([
+            np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
+            for item in np.char.strip(day_data['value'].to_numpy('str'),'[]')])
+        plt.plot(day_x,day_y,label='HR data')
+        plt.xlabel('Data')
+        plt.ylabel('Heart rate [bpm]')
+        avg_hr_active_days.append(np.average(day_y))
+        day_mask=start_time_index==day # creates a mask for the current day
+        active_starts=start[day_mask] # generates the datetime objects for the activities done on the current day
+        active_ends=end[day_mask]
+        for i in active_starts:
+            plt.axvline(pd.to_datetime(i, format='ISO8601',utc=True),color='red')
+        for j in active_ends:
+            plt.axvline(pd.to_datetime(j, format='ISO8601',utc=True),color='red')
+        plt.tick_params(axis='x',labelrotation=90,length=0.1)
+        plt.tight_layout()
+        plt.legend()
+        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day.strftime('%Y-%m-%d')))
+        plt.close()
+    return avg_hr_active_days,active_dates
 
 def total_timespan(data,number):
     time_y = np.array([
@@ -221,28 +221,18 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
     ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
     time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are in datetime format
     months=np.unique(time_index.month) # finds the unique months in the data
-    print('Months in data: {}'.format(months))
-    # all_months=split_on_dash(data[:,0]) # splits time stamps up into year, month, rest
-    # year_months = only_yearAndmonth(data[:,0])
-    # Weeks=[]
-    # avg_hr_months=[]
-    # avg_hr_active_days=[]
-    # avg_hr_weekly=[]
-    
     if months_on:
         avg_hr_months=months_calc(data,number,time_index)
     if weeks_on:
-        avg_week_hr=week_calc(data,number,time_index)
+        weeks,avg_week_hr=week_calc(data,number,time_index)
     if active_on:
-        avg_hr_active_day=active_days_calc(data,number,time_index)
+        avg_hr_active_day,activities=active_days_calc(data,number,time_index)
     if total_on:
         time_y=total_timespan(data,number)
     if day_and_night_on:
         avg_night,df=days_and_nights(data,number,time_index)    
         
-
-    activities=np.concatenate(activities).tolist()
-    return 1/time_y,avg_hr_months,avg_night,np.average(time_y),months,avg_hr_weekly,avg_hr_active_days,Weeks,activities,df
+    return 1/time_y,avg_hr_months,avg_night,np.average(time_y),months,avg_week_hr,avg_hr_active_day,weeks,activities,df
 
 def detecting_crossover(log_F,log_n):
     best_split=None
@@ -570,8 +560,6 @@ def main():
         
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
-        heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
-        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=False,weeks_on=False,active_on=False,total_on=False)
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
