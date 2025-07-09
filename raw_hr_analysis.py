@@ -109,9 +109,10 @@ def week_calc(data,number,time_index):
     
     return weeks,avg_hr_weekly
 
-def active_days_calc(data,number,time_index,start,end,patient):
+def active_days_calc(data,number,time_index,patient):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
     normalised_time_index=time_index.normalize() # normalises the time index to remove the time component
+    start,end= sortingActivityData(number,patient=patient) # brings in activity data
     start_time_index=pd.DatetimeIndex(start).normalize() # ensures the activity start times are in datetime format
     active_dates= np.unique(start_time_index) # finds all unique dates activities were done on
     for day in active_dates: # loops through the days activity was done on
@@ -151,9 +152,9 @@ def total_timespan(data,number):
     plt.legend()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
     plt.close()
-    return time_y
+    return time_y.to_numpy(dtype=np.float64)
 
-def days_and_nights(data,number,time_index,start,end):
+def days_and_nights(data,number,time_index):
     night_mask=(time_index.hour>=20) | (time_index.hour<6) # creates a mask for the night time data
     day_mask=(time_index.hour<20) | (time_index.hour>=6) # creates a mask for the day time data
     night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
@@ -178,6 +179,7 @@ def days_and_nights(data,number,time_index,start,end):
     return np.average(night_y),df
 
 def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
+    results=[]
     resting_hr=pd.DataFrame({'date':[],
                              'resting_hr':[]})
     days_df=pd.DataFrame({'date':[],
@@ -197,43 +199,43 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
         avg_day = np.mean(day_vals) if len(day_vals) > 0 else np.nan
         min_day = np.min(day_vals) if len(day_vals) > 0 else np.nan
         max_day = np.max(day_vals) if len(day_vals) > 0 else np.nan
-        print(day)
+        
         night_mask_i= time_index.normalize()[night_mask] == day # creates a mask for the current night
-        night_hr_data=night_data['value'] # gets the heart rate data for the current night
-        night_vals=night_hr_data[night_mask_i] # gets the heart rate data for the current night
+
+  
+        night_vals=night_data[night_mask_i]['value'].to_numpy(dtype=np.float64) # gets the heart rate data for nights
+
+
         if len(night_vals)>0:
             avg_night = np.mean(night_vals)
             min_night = np.min(night_vals) 
             max_night = np.max(night_vals)
+            min_indx=np.argmin(night_vals)
+            resting_hr_val=np.inf
+            for j in range(len(night_vals)):
+                current_val=np.mean(night_vals[j:j+5])
+                if current_val<resting_hr_val:
+                    resting_hr_val=current_val
+        
             
         else:
             resting_hr_val = np.nan
             avg_night = np.nan
             min_night = np.nan
             max_night = np.nan
-        print(resting_hr)
+        results.append({
+        'date': date_str,
+        'avg_day': avg_day,
+        'min_day': min_day,
+        'max_day': max_day,
+        'avg_night': avg_night,
+        'min_night': min_night,
+        'max_night': max_night,
+        'resting_hr': resting_hr_val
+    })
 
+    df = pd.DataFrame(results)
 
-
-
-    for i in range(len(days)):
-        mask=time_index.normalize()[day_mask]==days[i]
-        day_vals=day_data[mask]
-        days_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.mean(day_vals),day_vals.min(),day_vals.max()]
-
-        mask=time_index.normalize()[night_mask]==days[i]
-        night_vals=night_data[mask]
-        try:
-            nights_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.mean(night_vals),night_vals.min(),night_vals.max()]
-            print([pd.DataFrame(night_vals).rolling(window=300,min_periods=1).mean().min().to_numpy(dtype=np.float64)])
-            resting_hr.loc[i]=[days[i].strftime('%Y-%m-%d'),pd.DataFrame(night_vals).rolling(window=300,min_periods=1).mean().min().to_numpy(dtype=np.float64)] # rolling average of the last 5 minutes of data
-        except:
-            nights_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.nan,np.nan,np.nan]
-    print(resting_hr)
-
-    df=pd.merge(days_df,nights_df, on='date')
-    df=pd.merge(df,resting_hr, on='date') # merges the dataframes together
-    print(df)
     return df
 
 
@@ -243,20 +245,19 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
     data['value']=np.array([
             np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
-    print(data)
     time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are  in datetime format
     months=np.unique(time_index.month) # finds the unique months in the data
-    start,end= sortingActivityData(number,patient=p) # brings in activity data
+    
     if months_on:
         avg_hr_months=months_calc(data,number,time_index)
     if weeks_on:
         weeks,avg_week_hr=week_calc(data,number,time_index)
     if active_on:
-        avg_hr_active_day,activities=active_days_calc(data,number,time_index,start,end,p)
+        avg_hr_active_day,activities=active_days_calc(data,number,time_index,p)
     if total_on:
         time_y=total_timespan(data,number)
     if day_and_night_on:
-        avg_night,df=days_and_nights(data,number,time_index,start,end)    
+        avg_night,df=days_and_nights(data,number,time_index)    
         
     return 1/time_y,avg_hr_months,avg_night,np.average(time_y),months,avg_week_hr,avg_hr_active_day,weeks,activities,df
 
@@ -352,7 +353,7 @@ def databasing(metrics,patient=True):
             try:
                 cur.execute("INSERT INTO Weeks('Number','{fweek}') VALUES('{fnumval}','{fweekval}')".format(fweek=metrics['weeks'][i][j],fnumval=metrics['Patient_num'][i],fweekval=metrics['avg_hr_per_week'][i][j]))
             except:
-                sql = f'UPDATE Weeks SET "w/c {metrics["weeks"][i][j]}" = ? WHERE Number = ?'
+                sql = f'UPDATE Weeks SET "{metrics["weeks"][i][j]}" = ? WHERE Number = ?'
                 cur.execute(sql, (metrics['avg_hr_per_week'][i][j], metrics['Patient_num'][i]))
     cur.execute("DROP TABLE Active")
     # Almost exactly the same for Active as for Months and Weeks
@@ -372,11 +373,11 @@ def databasing(metrics,patient=True):
     cur.execute("DROP tABLE DayAndNight")
     # creates a table to store the rest of the patient data
     cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
-    cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+    cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
     for i in range(len(metrics['Patient_num'])):
         cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES ('{fnum}','{fnight}','{foverall}','{fscalingN}','{fscalingL}','{fECGscalingN}','{fECGscalingL}','{fcPPG}','{fcECG}')".format(fnum=metrics['Patient_num'][i],fnight=metrics['avg_hr_night'][i],foverall=metrics['avg_hr_overall'][i],fscalingN=metrics['scaling_exponent_noise'][i],fscalingL=metrics['scaling_exponent_linear'][i],fECGscalingN=metrics['ECG_scaling_exponent_noise'][i],fECGscalingL=metrics['ECG_scaling_exponent_linear'][i],fcPPG=metrics['crossover_PPG'][i],fcECG=metrics['crossover_ECG'][i]))
         for j in range(len(metrics['days'][i])):
-            cur.execute("""INSERT INTO DayAndNight(Number,date,day_avg,night_avg,day_min,night_min,day_max,night_max) VALUES (?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['days'][i][j],metrics['day_avg'][i][j],metrics['night_avg'][i][j],metrics['day_min'][i][j],metrics['night_min'][i][j],metrics['day_max'][i][j],metrics['night_max'][i][j]))
+            cur.execute("""INSERT INTO DayAndNight(Number,date,day_avg,night_avg,day_min,night_min,day_max,night_max,resting_hr) VALUES (?,?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['days'][i][j],metrics['day_avg'][i][j],metrics['night_avg'][i][j],metrics['day_min'][i][j],metrics['night_min'][i][j],metrics['day_max'][i][j],metrics['night_max'][i][j],metrics['resting_hr'][i][j]))
 
     
 
@@ -496,6 +497,7 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     metrics['night_min'].append(df['min_night'].to_numpy())
     metrics['day_max'].append(df['max_day'].to_numpy())
     metrics['night_max'].append(df['max_night'].to_numpy())
+    metrics['resting_hr'].append(df['resting_hr'].to_numpy())
     return metrics
 
 def alpha_beta_filter(x,y,Q=500):
@@ -567,7 +569,8 @@ def main():
                 'day_min':[],
                 'night_min':[],
                 'day_max':[],
-                'night_max':[]}
+                'night_max':[],
+                'resting_hr':[]}
     surrogate_dictionary={'Patient_num':[],
                           'Surrogate_data_linear':[],
                           'Surrogate_data_noise':[]}
@@ -586,8 +589,6 @@ def main():
         
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
-        heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
-        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis)
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
