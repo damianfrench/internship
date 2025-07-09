@@ -66,9 +66,7 @@ def months_calc(data,number,time_index):
         mask=time_index.month==m # creates a mask for the current month
         month_data=data[mask]
         month_x=month_data['start']
-        month_y = np.array([
-            np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(month_data['value'].to_numpy('str'),'[]')])
+        month_y = month_data['value']
         plt.title('Heart rate for month {}'.format(m))
         plt.plot(month_x,month_y,label='HR data') # plots the heart rate data for this month
         plt.xlabel('Date')
@@ -95,9 +93,7 @@ def week_calc(data,number,time_index):
         
         week_data=data[mask]
         week_x=week_data['start']
-        week_y = np.array([
-            np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(week_data['value'].to_numpy('str'),'[]')])
+        week_y = week_data['value']
         avg_hr_weekly.append(np.average(week_y)) # averages the hr for that weeks
         plt.title('Heart rate for week {}'.format(w))
         plt.plot(week_x,week_y,label='HR data') # plots the heart rate data for this week
@@ -113,9 +109,8 @@ def week_calc(data,number,time_index):
     
     return weeks,avg_hr_weekly
 
-def active_days_calc(data,number,time_index):
+def active_days_calc(data,number,time_index,start,end,patient):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
-    start,end= sortingActivityData(number,patient=True) # brings in activity data
     normalised_time_index=time_index.normalize() # normalises the time index to remove the time component
     start_time_index=pd.DatetimeIndex(start).normalize() # ensures the activity start times are in datetime format
     active_dates= np.unique(start_time_index) # finds all unique dates activities were done on
@@ -124,9 +119,7 @@ def active_days_calc(data,number,time_index):
         day_data=data[mask]
         plt.title('Heart rate on  day with activity: {}'.format(day))
         day_x= day_data['start']
-        day_y = np.array([
-            np.mean([int(x) for x in item.split(',')])  # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(day_data['value'].to_numpy('str'),'[]')])
+        day_y = day_data['value']
         plt.plot(day_x,day_y,label='HR data')
         plt.xlabel('Data')
         plt.ylabel('Heart rate [bpm]')
@@ -146,9 +139,7 @@ def active_days_calc(data,number,time_index):
     return avg_hr_active_days,active_dates
 
 def total_timespan(data,number):
-    time_y = np.array([
-            np.mean([int(x) for x in item.split(',')]) # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
+    time_y = data['value']  # extracts the heart rate values from the data
     time_x=data['start']
     plt.title('Heart rate over study')
     plt.plot(time_x,time_y,label='HR data')
@@ -162,17 +153,13 @@ def total_timespan(data,number):
     plt.close()
     return time_y
 
-def days_and_nights(data,number,time_index):
+def days_and_nights(data,number,time_index,start,end):
     night_mask=(time_index.hour>=20) | (time_index.hour<6) # creates a mask for the night time data
     day_mask=(time_index.hour<20) | (time_index.hour>=6) # creates a mask for the day time data
     night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
     day_data= data[day_mask] # generates the other data for comparison
-    night_y=np.array([
-            np.mean([int(x) for x in item.split(',')]) # Split and convert the BPM data to integers, then average if there are multiple readings
-            for item in np.char.strip(night_data['value'].to_numpy('str'),'[]')])
-    day_y=np.array([
-            np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
-            for item in np.char.strip(day_data['value'].to_numpy('str'),'[]')])
+    night_y=night_data['value']  # extracts the heart rate values from the data
+    day_y=day_data['value']  # extracts the heart rate values from the data
     night_x=night_data['start']
     day_x=day_data['start']
     plt.title('Heart rates over study - nights only')
@@ -185,12 +172,14 @@ def days_and_nights(data,number,time_index):
     plt.legend()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
-    df=resting_max_and_min(night_mask,day_mask,time_index,day_y,night_y)
+    df=resting_max_and_min(night_mask,day_mask,time_index,day_y,night_data)
 
 
     return np.average(night_y),df
 
 def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
+    resting_hr=pd.DataFrame({'date':[],
+                             'resting_hr':[]})
     days_df=pd.DataFrame({'date':[],
                           'avg_day':[],
                           'min_day':[],
@@ -200,6 +189,33 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
                           'min_night':[],
                           'max_night':[]})
     days=np.unique(time_index.normalize()) # normalises the time index to remove the time component
+
+    for i,day in enumerate(days):
+        date_str = day.strftime('%Y-%m-%d')
+        day_mask_i= time_index.normalize()[day_mask] == day # creates a mask for the current day
+        day_vals=day_data[day_mask_i] # gets the heart rate data for the current day
+        avg_day = np.mean(day_vals) if len(day_vals) > 0 else np.nan
+        min_day = np.min(day_vals) if len(day_vals) > 0 else np.nan
+        max_day = np.max(day_vals) if len(day_vals) > 0 else np.nan
+        print(day)
+        night_mask_i= time_index.normalize()[night_mask] == day # creates a mask for the current night
+        night_hr_data=night_data['value'] # gets the heart rate data for the current night
+        night_vals=night_hr_data[night_mask_i] # gets the heart rate data for the current night
+        if len(night_vals)>0:
+            avg_night = np.mean(night_vals)
+            min_night = np.min(night_vals) 
+            max_night = np.max(night_vals)
+            
+        else:
+            resting_hr_val = np.nan
+            avg_night = np.nan
+            min_night = np.nan
+            max_night = np.nan
+        print(resting_hr)
+
+
+
+
     for i in range(len(days)):
         mask=time_index.normalize()[day_mask]==days[i]
         day_vals=day_data[mask]
@@ -209,28 +225,38 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
         night_vals=night_data[mask]
         try:
             nights_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.mean(night_vals),night_vals.min(),night_vals.max()]
+            print([pd.DataFrame(night_vals).rolling(window=300,min_periods=1).mean().min().to_numpy(dtype=np.float64)])
+            resting_hr.loc[i]=[days[i].strftime('%Y-%m-%d'),pd.DataFrame(night_vals).rolling(window=300,min_periods=1).mean().min().to_numpy(dtype=np.float64)] # rolling average of the last 5 minutes of data
         except:
             nights_df.loc[i]=[days[i].strftime('%Y-%m-%d'),np.nan,np.nan,np.nan]
+    print(resting_hr)
 
     df=pd.merge(days_df,nights_df, on='date')
+    df=pd.merge(df,resting_hr, on='date') # merges the dataframes together
+    print(df)
     return df
 
 
 def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
     Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
     ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
-    time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are in datetime format
+    data['value']=np.array([
+            np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
+            for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
+    print(data)
+    time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are  in datetime format
     months=np.unique(time_index.month) # finds the unique months in the data
+    start,end= sortingActivityData(number,patient=p) # brings in activity data
     if months_on:
         avg_hr_months=months_calc(data,number,time_index)
     if weeks_on:
         weeks,avg_week_hr=week_calc(data,number,time_index)
     if active_on:
-        avg_hr_active_day,activities=active_days_calc(data,number,time_index)
+        avg_hr_active_day,activities=active_days_calc(data,number,time_index,start,end,p)
     if total_on:
         time_y=total_timespan(data,number)
     if day_and_night_on:
-        avg_night,df=days_and_nights(data,number,time_index)    
+        avg_night,df=days_and_nights(data,number,time_index,start,end)    
         
     return 1/time_y,avg_hr_months,avg_night,np.average(time_y),months,avg_week_hr,avg_hr_active_day,weeks,activities,df
 
@@ -319,12 +345,12 @@ def databasing(metrics,patient=True):
     cur.execute("DROP TABLE Weeks")
     # exactly the same for Weeks as for Months
     cur.execute("CREATE TABLE Weeks(Number TEXT, PRIMARY KEY(Number))")
-    sql_commands = "; ".join([f"ALTER TABLE Weeks ADD COLUMN 'w/c {week}' TEXT" for week in weeks])
+    sql_commands = "; ".join([f"ALTER TABLE Weeks ADD COLUMN '{week}' TEXT" for week in weeks])
     cur.executescript(sql_commands)
     for i in range(len(metrics['weeks'])):
         for j in range(len(metrics['weeks'][i])):
             try:
-                cur.execute("INSERT INTO Weeks('Number','w/c {fweek}') VALUES('{fnumval}','{fweekval}')".format(fweek=metrics['weeks'][i][j],fnumval=metrics['Patient_num'][i],fweekval=metrics['avg_hr_per_week'][i][j]))
+                cur.execute("INSERT INTO Weeks('Number','{fweek}') VALUES('{fnumval}','{fweekval}')".format(fweek=metrics['weeks'][i][j],fnumval=metrics['Patient_num'][i],fweekval=metrics['avg_hr_per_week'][i][j]))
             except:
                 sql = f'UPDATE Weeks SET "w/c {metrics["weeks"][i][j]}" = ? WHERE Number = ?'
                 cur.execute(sql, (metrics['avg_hr_per_week'][i][j], metrics['Patient_num'][i]))
@@ -560,6 +586,8 @@ def main():
         
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
+        heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
+        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis)
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
