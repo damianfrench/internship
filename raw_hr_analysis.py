@@ -88,12 +88,15 @@ def week_calc(data,number,time_index):
     # finds the unique weeks in the data
     avg_hr_weekly=[]
     weeks=np.unique(time_index.isocalendar().week) # finds the unique weeks in the data
+    print(weeks)
+    print(time_index.to_series().dt.strftime('%G-W%V').unique())
     for w in weeks:
         mask=(time_index.isocalendar().week==w).to_numpy() # creates a mask for the current week
         
         
         week_data=data[mask]
         week_x=week_data['start']
+        print(w)
         week_y = week_data['value']
         avg_hr_weekly.append(np.average(week_y)) # averages the hr for that weeks
         plt.title('Heart rate for week {}'.format(w))
@@ -109,7 +112,7 @@ def week_calc(data,number,time_index):
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
     
-    return time_index.to_series().dt.strftime('%Y-W%W').unique(),avg_hr_weekly
+    return time_index.to_series().dt.strftime('%G-W%V').unique(),avg_hr_weekly
 
 def active_days_calc(data,number,time_index,patient):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
@@ -263,6 +266,7 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
         time_y=total_timespan(data,number)
     if day_and_night_on :
         avg_night,df=days_and_nights(data,number,time_index)    
+    print(len(weeks),len(avg_week_hr))
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "avg_hr_night":avg_night,
@@ -431,6 +435,33 @@ def surrogate(data):
     return surr
 
 def DFA_plot(lag,dfa,patientNum,RR,type): 
+    """
+    Plots the Detrended Fluctuation Analysis (DFA) results and computes scaling exponents.
+
+    This function creates a log-log plot of DFA fluctuation values against segment sizes (`lag`),
+    fits piecewise linear regressions to detect scaling regions, identifies the crossover point
+    (if any), and plots the scaling pattern. It also saves the resulting plot to a PNG file.
+
+    Parameters:
+        lag (array-like): Window sizes used in the DFA calculation.
+        dfa (array-like): DFA fluctuation function corresponding to the `lag` values.
+        patientNum (str or int): Identifier for the patient whose data is being analyzed.
+        RR (array-like): RR interval data used for determining whether DFA should proceed.
+        type (str): Description of the dataset type ('' for PPG and 'ECG').
+
+    Returns:
+        tuple:
+            (a1, a2, crossover_log_n) (tuple): DFA scaling exponents before and after the crossover point,
+                                               and the log of the crossover lag value.
+            m (float): Slope of the overall scaling pattern.
+            logn (array-like): Log-transformed lag values used in scaling pattern analysis.
+
+    Notes:
+        - If the RR interval data has fewer than 1000 points and `type` is not empty,
+          the function returns NaNs to indicate insufficient data.
+        - The function saves the scaling pattern plot to a fixed directory.
+    """
+     
     if len(RR)<1000 and len(type)!=0:
         return (np.nan,np.nan,np.nan),np.nan,np.nan
     ax,fig=plt.subplots(2,1,figsize=(12, 8))
@@ -599,7 +630,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns=pd.DataFrame({'gradient':[],
                                    'log_n':[]})
-    for i in range(2,5):
+    for i in range(2,50):
         print(i)
         if i==42 or i==24:
             continue
@@ -611,10 +642,7 @@ def main():
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
 
-        
-        heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
-        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
-    
+          
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
             heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
