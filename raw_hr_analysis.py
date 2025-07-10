@@ -251,8 +251,8 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
             np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
     time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are  in datetime format
-    months=np.unique(time_index.month) # finds the unique months in the data
-    
+    months=time_index.to_series().dt.strftime('%b %Y').unique() # finds the unique months in the data
+    avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,None,None,None
     if months_on:
         avg_hr_months=months_calc(data,number,time_index)
     if weeks_on:
@@ -261,10 +261,19 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
         avg_hr_active_day,activities=active_days_calc(data,number,time_index,p)
     if total_on:
         time_y=total_timespan(data,number)
-    if day_and_night_on:
+    if day_and_night_on :
         avg_night,df=days_and_nights(data,number,time_index)    
-        
-    return 1/time_y,avg_hr_months,avg_night,np.average(time_y),months,avg_week_hr,avg_hr_active_day,weeks,activities,df
+
+    return {"HRV":1/time_y,
+            "avg_hr_months":avg_hr_months,
+            "avg_hr_night":avg_night,
+            "average_hr":np.average(time_y),
+            "months":months,
+            "avg_week_hr":avg_week_hr,
+            "avg_active_hr":avg_hr_active_day,
+            "weeks":weeks,
+            "active_days":activities,
+            "resting_plus_more":df}
 
 def detecting_crossover(log_F,log_n):
     best_split=None
@@ -315,12 +324,37 @@ def DFA(RR,number):
     F_s=np.array(F_s)
     return F_s,window_sizes
 
-def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
-    if patient:
-        con=sqlite3.connect('patient_metrics.db') # connects to database
-    else:
-        con=sqlite3.connect('volunteer_metrics.db')
+def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix):
     cur=con.cursor()
+    cur.execute(f"DROP TABLE IF EXISTS {table_name}") # drops the table if it exists
+    cur.execute(f"CREATE TABLE {table_name}(Number TEXT, PRIMARY KEY(Number))") # creates a new table with the specified columns
+    adding_columns_command=";".join([f"ALTER TABLE {table_name} ADD COLUMN '{col}' TEXT" for col in columns]) # creates a command to add the columns to the table
+    cur.executescript(adding_columns_command) # executes the command to add the columns
+
+    for i,row in enumerate(value_matrix):
+        for j,key in enumerate(columns):
+            try:
+                cur.execute(f"INSERT INTO {table_name}('Number','{key}') VALUES(?,?)",(patient_num,row[j])) # inserts the first values into the table
+            except:
+                cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(row[j],patient_num)) # updates the subsequent values in the table
+
+
+def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
+    db_name = 'patient_metrics.db' if patient else 'volunteer_metrics.db'
+    con = sqlite3.connect(db_name)
+    cur = con.cursor()
+
+    patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
+
+    if months_on:
+        months=sorted(set(sum(metrics['months'],[]))) # gets the unique months from the metrics dictionary
+        print(months)
+        creating_or_updating_tales(con, 'Months', metrics['months'][0], patient_num, metrics['avg_hr_per_month']) # creates or updates the Months table with the average heart rate per month
+
+    if weeks_on:
+        pass
+    if active_on:
+        pass
     
     cur.execute("DROP TABLE Months")
     cur.execute("CREATE TABLE Months(Number TEXT, PRIMARY KEY(Number))") # creates a table to store the Avg heart rate for each month
@@ -480,29 +514,32 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
 def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
 
     metrics['Patient_num'].append(patientNum)
-    metrics['avg_hr_per_month'].append(RR[1])
-    metrics['avg_hr_night'].append(RR[2])
-    metrics['avg_hr_overall'].append(RR[3])
-    metrics['avg_hr_active'].append(RR[6])
+    metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
+    metrics['avg_hr_night'].append(RR['avg_hr_night'])
+    metrics['avg_hr_overall'].append(RR['average_hr'])
+    metrics['avg_hr_active'].append(RR['avg_active_hr'])
     metrics['scaling_exponent_noise'].append(H_hat[0])
     metrics['scaling_exponent_linear'].append(H_hat[1])
     metrics['ECG_scaling_exponent_noise'].append(H_hat_ECG[0])
     metrics['ECG_scaling_exponent_linear'].append(H_hat_ECG[1])
     metrics['crossover_PPG'].append(H_hat[2])
     metrics['crossover_ECG'].append(H_hat_ECG[2])
-    metrics['avg_hr_per_week'].append(RR[5])
-    metrics['months'].append(RR[4])
-    metrics['weeks'].append(RR[7])
-    metrics['activities'].append(RR[8])
-    df=RR[9]
-    metrics['days'].append(df['date'].to_numpy())
-    metrics['day_avg'].append(df['avg_day'].to_numpy())
-    metrics['night_avg'].append(df['avg_night'].to_numpy())
-    metrics['day_min'].append(df['min_day'].to_numpy())
-    metrics['night_min'].append(df['min_night'].to_numpy())
-    metrics['day_max'].append(df['max_day'].to_numpy())
-    metrics['night_max'].append(df['max_night'].to_numpy())
-    metrics['resting_hr'].append(df['resting_hr'].to_numpy())
+    metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
+    metrics['months'].append(RR['months'])
+    metrics['weeks'].append(RR['weeks'])
+    metrics['activities'].append(RR['active_days'])
+    df=RR['resting_plus_more']
+    try:
+        metrics['days'].append(df['date'].to_numpy())
+        metrics['day_avg'].append(df['avg_day'].to_numpy())
+        metrics['night_avg'].append(df['avg_night'].to_numpy())
+        metrics['day_min'].append(df['min_day'].to_numpy())
+        metrics['night_min'].append(df['min_night'].to_numpy())
+        metrics['day_max'].append(df['max_day'].to_numpy())
+        metrics['night_max'].append(df['max_night'].to_numpy())
+        metrics['resting_hr'].append(df['resting_hr'].to_numpy())
+    except:
+        pass
     return metrics
 
 def alpha_beta_filter(x,y,Q=500):
@@ -604,7 +641,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns=pd.DataFrame({'gradient':[],
                                    'log_n':[]})
-    for i in range(2,50):
+    for i in range(2,5):
         print(i)
         if i==42 or i==24:
             continue
@@ -617,7 +654,9 @@ def main():
         patient_analysis=True
 
         
-
+        heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
+        RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
+    
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
             heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
@@ -629,11 +668,11 @@ def main():
         ECG_RR=ECG_HRV(ECG_RR,patientNum)
         #surrogate_data=surrogate(RR[0])
 
-        dfa,lag=DFA(RR[0],patientNum)
+        dfa,lag=DFA(RR['HRV'],patientNum)
         plt.plot(lag,dfa)
         plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{patientNum}/unlogged_DFA.png')
         plt.close()
-        H_hat,m,log_n=DFA_plot(lag,dfa,patientNum,RR[0],'')
+        H_hat,m,log_n=DFA_plot(lag,dfa,patientNum,RR['HRV'],'')
         scaling_patterns.loc[i]=[m,log_n]
         dfa,lag=DFA(ECG_RR,patientNum)
         H_hat_ECG=DFA_plot(lag,dfa,patientNum,ECG_RR,'ECG')
