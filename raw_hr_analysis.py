@@ -109,14 +109,14 @@ def week_calc(data,number,time_index):
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
     
-    return weeks,avg_hr_weekly
+    return time_index.to_series().dt.strftime('%Y-W%W').unique(),avg_hr_weekly
 
 def active_days_calc(data,number,time_index,patient):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
     normalised_time_index=time_index.normalize() # normalises the time index to remove the time component
     start,end= sortingActivityData(number,patient=patient) # brings in activity data
     start_time_index=pd.DatetimeIndex(start).normalize() # ensures the activity start times are in datetime format
-    active_dates= np.unique(start_time_index) # finds all unique dates activities were done on
+    active_dates= start_time_index.to_series().dt.strftime('%Y-%m-%d').unique() # finds all unique dates activities were done on
     for day in active_dates: # loops through the days activity was done on
         mask=normalised_time_index==day   
         day_data=data[mask]
@@ -138,7 +138,7 @@ def active_days_calc(data,number,time_index,patient):
         plt.tight_layout()
         plt.legend()
         plt.show()
-        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day.strftime('%Y-%m-%d')))
+        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day))
         plt.close()
     return avg_hr_active_days,active_dates
 
@@ -263,7 +263,6 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
         time_y=total_timespan(data,number)
     if day_and_night_on :
         avg_night,df=days_and_nights(data,number,time_index)    
-
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "avg_hr_night":avg_night,
@@ -352,62 +351,13 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
         creating_or_updating_tales(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
 
     if weeks_on:
-        pass
+        weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
+        print(weeks)
+        creating_or_updating_tales(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
     if active_on:
-        pass
-    
-    cur.execute("DROP TABLE Months")
-    cur.execute("CREATE TABLE Months(Number TEXT, PRIMARY KEY(Number))") # creates a table to store the Avg heart rate for each month
-    # months_hr=months_hr[np.argsort(months)]
-    # months=np.sort(months)
-    months=np.unique(np.concatenate(metrics['months']))
-    weeks=np.unique(np.concatenate(metrics['weeks']))
-    activities=np.unique(np.concatenate(metrics['activities']))
-    sql_commands = "; ".join([f"ALTER TABLE Months ADD COLUMN '{month}' TEXT" for month in months])
-    cur.executescript(sql_commands)
-    for i in range(len(metrics['months'])):
-        # months_hr=months_hr[np.argsort(months)]
-        # months=np.sort(months)
-        for j in range(len(metrics['months'][i])): # loops through each patient and then each month they took readings for
-            # try:
-            #     cur.execute("ALTER TABLE Months ADD COLUMN '{}' TEXT".format(months[j])) # adds a column to the table for each new month
-            # except:
-            #     pass
-            try:
-                # for the first entry for each patient
-                cur.execute("INSERT INTO Months('Number','{fmonth}') VALUES('{fnumval}','{fmonthval}')".format(fmonth=metrics['months'][i][j],fnumval=metrics['Patient_num'][i],fmonthval=metrics['avg_hr_per_month'][i][j]))
-            except:
-                # for susequent entries for each patient
-                sql = f'UPDATE Months SET "{metrics['months'][i][j]}" = ? WHERE Number = ?'
-                cur.execute(sql, (metrics['avg_hr_per_month'][i][j], metrics['Patient_num'][i]))
-
-                
-    cur.execute("DROP TABLE Weeks")
-    # exactly the same for Weeks as for Months
-    cur.execute("CREATE TABLE Weeks(Number TEXT, PRIMARY KEY(Number))")
-    sql_commands = "; ".join([f"ALTER TABLE Weeks ADD COLUMN '{week}' TEXT" for week in weeks])
-    cur.executescript(sql_commands)
-    for i in range(len(metrics['weeks'])):
-        for j in range(len(metrics['weeks'][i])):
-            try:
-                cur.execute("INSERT INTO Weeks('Number','{fweek}') VALUES('{fnumval}','{fweekval}')".format(fweek=metrics['weeks'][i][j],fnumval=metrics['Patient_num'][i],fweekval=metrics['avg_hr_per_week'][i][j]))
-            except:
-                sql = f'UPDATE Weeks SET "{metrics["weeks"][i][j]}" = ? WHERE Number = ?'
-                cur.execute(sql, (metrics['avg_hr_per_week'][i][j], metrics['Patient_num'][i]))
-    cur.execute("DROP TABLE Active")
-    # Almost exactly the same for Active as for Months and Weeks
-    cur.execute("CREATE TABLE Active(Number TEXT, PRIMARY KEY(Number))")
-    sql_commands = "; ".join([f"ALTER TABLE Active ADD COLUMN '{activity}' TEXT" for activity in activities])
-    cur.executescript(sql_commands)
-    for i in range(len(metrics['activities'])):
-        for j in range(len(metrics['activities'][i])):
-            try:
-                cur.execute("INSERT INTO Active('Number','{factivestart}') VALUES('{fnumval}','{factiveval}')".format(factivestart=metrics['activities'][i][j],fnumval=metrics['Patient_num'][i],factiveval=metrics['avg_hr_active'][i][j]))
-            except:
-                sql = f'UPDATE Active SET "{metrics["activities"][i][j]}" = ? WHERE Number = ?'
-                cur.execute(sql, (metrics['avg_hr_active'][i][j], metrics['Patient_num'][i]))
-
-    
+        activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
+        print(activities)
+        creating_or_updating_tales(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
     cur.execute("DROP TABLE Patients")
     cur.execute("DROP tABLE DayAndNight")
     # creates a table to store the rest of the patient data
@@ -609,7 +559,7 @@ def ECG_HRV(ECG_RR,patientNum):
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on=True,False,False,True,False
+    months_on,weeks_on,active_on,total_on,day_and_night_on=False,False,True,True,False
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
