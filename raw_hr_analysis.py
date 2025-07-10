@@ -358,17 +358,25 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
         activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
         print(activities)
         creating_or_updating_tales(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
-    cur.execute("DROP TABLE Patients")
-    cur.execute("DROP tABLE DayAndNight")
-    # creates a table to store the rest of the patient data
-    cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
-    cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
-    for i in range(len(metrics['Patient_num'])):
-        cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES ('{fnum}','{fnight}','{foverall}','{fscalingN}','{fscalingL}','{fECGscalingN}','{fECGscalingL}','{fcPPG}','{fcECG}')".format(fnum=metrics['Patient_num'][i],fnight=metrics['avg_hr_night'][i],foverall=metrics['avg_hr_overall'][i],fscalingN=metrics['scaling_exponent_noise'][i],fscalingL=metrics['scaling_exponent_linear'][i],fECGscalingN=metrics['ECG_scaling_exponent_noise'][i],fECGscalingL=metrics['ECG_scaling_exponent_linear'][i],fcPPG=metrics['crossover_PPG'][i],fcECG=metrics['crossover_ECG'][i]))
-        for j in range(len(metrics['days'][i])):
-            cur.execute("""INSERT INTO DayAndNight(Number,date,day_avg,night_avg,day_min,night_min,day_max,night_max,resting_hr) VALUES (?,?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['days'][i][j],metrics['day_avg'][i][j],metrics['night_avg'][i][j],metrics['day_min'][i][j],metrics['night_min'][i][j],metrics['day_max'][i][j],metrics['night_max'][i][j],metrics['resting_hr'][i][j]))
-
     
+    if total_on:
+        
+    
+        cur.execute("DROP TABLE Patients")
+        cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
+        for i in range(len(patient_num)):
+            print(metrics['ECG_scaling_exponent_noise'][i])
+            cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_night'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
+        
+    if day_and_night_on:
+        cur.execute("DROP TABLE DayAndNight")
+        # creates a table to store the rest of the patient data
+        cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+        for i in range(len(patient_num)):
+            for j in range(len(metrics['days'][i])):
+                cur.execute("""INSERT INTO DayAndNight(Number,date,day_avg,night_avg,day_min,night_min,day_max,night_max,resting_hr) VALUES (?,?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['days'][i][j],metrics['day_avg'][i][j],metrics['night_avg'][i][j],metrics['day_min'][i][j],metrics['night_min'][i][j],metrics['day_max'][i][j],metrics['night_max'][i][j],metrics['resting_hr'][i][j]))
+
+        
 
 
 
@@ -422,9 +430,9 @@ def surrogate(data):
 
     return surr
 
-def DFA_plot(lag,dfa,patientNum,RR,type):
+def DFA_plot(lag,dfa,patientNum,RR,type): 
     if len(RR)<1000 and len(type)!=0:
-        return [np.nan,np.nan,np.nan]
+        return (np.nan,np.nan,np.nan),np.nan,np.nan
     ax,fig=plt.subplots(2,1,figsize=(12, 8))
     plt.subplot(2,1,1)
     # plots log-log of DFA analysed data against n, cutting off the end where linearality is lost
@@ -559,7 +567,7 @@ def ECG_HRV(ECG_RR,patientNum):
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on=False,False,True,True,False
+    months_on,weeks_on,active_on,total_on,day_and_night_on=True,True,True,True,True
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -625,7 +633,9 @@ def main():
         H_hat,m,log_n=DFA_plot(lag,dfa,patientNum,RR['HRV'],'')
         scaling_patterns.loc[i]=[m,log_n]
         dfa,lag=DFA(ECG_RR,patientNum)
-        H_hat_ECG=DFA_plot(lag,dfa,patientNum,ECG_RR,'ECG')
+        H_hat_ECG,m,logn=DFA_plot(lag,dfa,patientNum,ECG_RR,'ECG')
+        print('H_hat',H_hat)
+        print('H_hat_ECG',H_hat_ECG)
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
