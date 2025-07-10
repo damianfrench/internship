@@ -457,13 +457,13 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
             logn (array-like): Log-transformed lag values used in scaling pattern analysis.
 
     Notes:
-        - If the RR interval data has fewer than 1000 points and `type` is not empty,
+        - If the RR interval data has fewer than 1000 points,
           the function returns NaNs to indicate insufficient data.
         - The function saves the scaling pattern plot to a fixed directory.
     """
      
     if len(RR)<1000:
-        return (np.nan,np.nan,np.nan),np.nan,np.nan
+        return (np.nan,np.nan,np.nan),[],[]
     ax,fig=plt.subplots(2,1,figsize=(12, 8))
     plt.subplot(2,1,1)
     # plots log-log of DFA analysed data against n, cutting off the end where linearality is lost
@@ -495,6 +495,8 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
     regression_line_2=log_n[np.where(log_n>=cross_point)]*H_hat2[0]+H_hat2[1]
     plt.plot(log_n[np.where(log_n>=cross_point)],regression_line_2,color='blue')
     ax,m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax)
+    plt.subplot(2,1,2)
+    plt.axvline(log_n[cross_indx], color='r', linestyle='--')
     plt.tight_layout()
     plt.show()
     plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patientNum}-{type}.png')
@@ -599,7 +601,7 @@ def ECG_HRV(ECG_RR,patientNum):
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on=True,True,True,True,True
+    months_on,weeks_on,active_on,total_on,day_and_night_on=True,True,True,True,False
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -631,7 +633,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns=pd.DataFrame({'gradient':[],
                                    'log_n':[]})
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if i==42 or i==24:
             continue
@@ -668,8 +670,8 @@ def main():
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    avg_gradient=np.mean(np.vstack(scaling_patterns['gradient'].to_numpy()),axis=0)
-    avg_log_n=np.mean(np.vstack(scaling_patterns['log_n'].to_numpy()),axis=0)
+    avg_gradient=np.mean([val for sublist in scaling_patterns['gradient'] for val in sublist])
+    avg_log_n=np.mean([val for sublist in scaling_patterns['log_n'] for val in sublist])
     plt.plot(avg_log_n,avg_gradient)
     plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/average.png')
     databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
