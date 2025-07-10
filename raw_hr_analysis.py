@@ -324,19 +324,19 @@ def DFA(RR,number):
     F_s=np.array(F_s)
     return F_s,window_sizes
 
-def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix):
+def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix,column_matrix):
     cur=con.cursor()
     cur.execute(f"DROP TABLE IF EXISTS {table_name}") # drops the table if it exists
     cur.execute(f"CREATE TABLE {table_name}(Number TEXT, PRIMARY KEY(Number))") # creates a new table with the specified columns
     adding_columns_command=";".join([f"ALTER TABLE {table_name} ADD COLUMN '{col}' TEXT" for col in columns]) # creates a command to add the columns to the table
     cur.executescript(adding_columns_command) # executes the command to add the columns
 
-    for i,row in enumerate(value_matrix):
-        for j,key in enumerate(columns):
+    for i,row in enumerate(column_matrix):
+        for j,key in enumerate(row):
             try:
-                cur.execute(f"INSERT INTO {table_name}('Number','{key}') VALUES(?,?)",(patient_num,row[j])) # inserts the first values into the table
+                cur.execute(f"INSERT INTO {table_name}('Number','{key}') VALUES(?,?)",(patient_num[i],value_matrix[i][j])) # inserts the first values into the table
             except:
-                cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(row[j],patient_num)) # updates the subsequent values in the table
+                cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(value_matrix[i][j],patient_num[i])) # updates the subsequent values in the table
 
 
 def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
@@ -347,9 +347,9 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
     patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
 
     if months_on:
-        months=sorted(set(sum(metrics['months'],[]))) # gets the unique months from the metrics dictionary
+        months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y')) #unique months in the metrics dictionary
         print(months)
-        creating_or_updating_tales(con, 'Months', metrics['months'][0], patient_num, metrics['avg_hr_per_month']) # creates or updates the Months table with the average heart rate per month
+        creating_or_updating_tales(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
 
     if weeks_on:
         pass
@@ -609,7 +609,7 @@ def ECG_HRV(ECG_RR,patientNum):
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on=False,False,False,True,False
+    months_on,weeks_on,active_on,total_on,day_and_night_on=True,False,False,True,False
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
