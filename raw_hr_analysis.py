@@ -462,7 +462,7 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
         - The function saves the scaling pattern plot to a fixed directory.
     """
      
-    if len(RR)<1000 and len(type)!=0:
+    if len(RR)<1000:
         return (np.nan,np.nan,np.nan),np.nan,np.nan
     ax,fig=plt.subplots(2,1,figsize=(12, 8))
     plt.subplot(2,1,1)
@@ -473,6 +473,7 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
     plt.plot(log_n, log_F, 'o',label='DFA data',color='g')
     plt.xlabel('logged size of integral slices')
     plt.ylabel('log of fluctuations from fit for each slice size')
+    print(type)
     plt.title('DFA - Measure of Randomness in HRV {} Patient {}'.format(type,patientNum))
     (cross_indx,a1,a2),cross_point=detecting_crossover(log_F,log_n)
     plt.axvline(log_n[cross_indx], color='r', linestyle='--', label="Crossover point")
@@ -496,7 +497,7 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
     ax,m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax)
     plt.tight_layout()
     plt.show()
-    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patientNum}.png')
+    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patientNum}-{type}.png')
     plt.close()
     return (a1,a2,log_n[cross_indx]),m,logn
 
@@ -658,7 +659,7 @@ def main():
         plt.plot(lag,dfa)
         plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{patientNum}/unlogged_DFA.png')
         plt.close()
-        H_hat,m,log_n=DFA_plot(lag,dfa,patientNum,RR['HRV'],'')
+        H_hat,m,log_n=DFA_plot(lag,dfa,patientNum,RR['HRV'],'PPG')
         scaling_patterns.loc[i]=[m,log_n]
         dfa,lag=DFA(ECG_RR,patientNum)
         H_hat_ECG,m,logn=DFA_plot(lag,dfa,patientNum,ECG_RR,'ECG')
