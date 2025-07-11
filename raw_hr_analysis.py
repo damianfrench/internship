@@ -294,7 +294,7 @@ def detecting_crossover(log_F,log_n):
         if total_r_squared>best_score:
             best_score=total_r_squared
             best_split=(i,slope1,slope2)
-    return best_split,log_n[best_split[0]]
+    return best_split
 
 def detecting_outliers(ECG_RR):
     outliers=[]
@@ -307,7 +307,7 @@ def detecting_outliers(ECG_RR):
     mask[outliers] = False
     return mask
 
-def DFA(RR,number):
+def DFA(RR):
     
     window_sizes=np.unique(np.logspace(0.5, np.log10(len(RR)), 100).astype(int)) # produces an array of varying window sizes scaled for logspace
 
@@ -329,7 +329,6 @@ def DFA(RR,number):
 
 def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix,column_matrix):
     cur=con.cursor()
-    cur.execute(f"DROP TABLE IF EXISTS {table_name}") # drops the table if it exists
     cur.execute(f"CREATE TABLE {table_name}(Number TEXT, PRIMARY KEY(Number))") # creates a new table with the specified columns
     adding_columns_command=";".join([f"ALTER TABLE {table_name} ADD COLUMN '{col}' TEXT" for col in columns]) # creates a command to add the columns to the table
     cur.executescript(adding_columns_command) # executes the command to add the columns
@@ -341,11 +340,40 @@ def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix,c
             except:
                 cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(value_matrix[i][j],patient_num[i])) # updates the subsequent values in the table
 
+def DFA_analysis(RR,patientNum,type,plot=True):
+    """ Performs Detrended Fluctuation Analysis (DFA) on the RR intervals and returns scaling exponents."""
+    if len(RR)<1000:
+        return (np.nan,np.nan,np.nan),[],[]
+    F_s,window_sizes=DFA(RR) # performs DFA on the data
+    log_n=np.log10(window_sizes)
+    log_F=np.log10(F_s)
+    params=detecting_crossover(log_F,log_n)
+    cross_point=log_n[params[0]] # gets the crossover point from the params
+    m1=params[1]
+    m2=params[2]
+    H_hat1 = np.polyfit(log_n[np.where(log_n<cross_point)],log_F[np.where(log_n<cross_point)],1,cov=False) # fits linear curve to the first section of the DFA plot
+    regression_line_1=log_n[np.where(log_n<cross_point)]*H_hat1[0]+H_hat1[1]
+    
+    H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
+    regression_line_2=log_n[np.where(log_n>=cross_point)]*H_hat2[0]+H_hat2[1]
+    if plot==True:
+        ax=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type) # plots the DFA results
+    else:
+        ax=None
+    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax,type)
+
+    H_hat=(m1,m2 ,cross_point) # returns the scaling exponents and crossover point for PPG data
+    return H_hat,m,logn
 
 def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
     db_name = 'patient_metrics.db' if patient else 'volunteer_metrics.db'
     con = sqlite3.connect(db_name)
     cur = con.cursor()
+    cur.execute("DROP TABLE IF EXISTS Months")
+    cur.execute("DROP TABLE IF EXISTS Weeks")
+    cur.execute("DROP TABLE IF EXISTS Active")
+    cur.execute("DROP TABLE IF EXISTS Patients")
+    cur.execute("DROP TABLE IF EXISTS DayAndNight")
 
     patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
 
@@ -366,14 +394,12 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
     if total_on:
         
     
-        cur.execute("DROP TABLE Patients")
         cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
         for i in range(len(patient_num)):
             print(metrics['ECG_scaling_exponent_noise'][i])
             cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_night'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
         
     if day_and_night_on:
-        cur.execute("DROP TABLE DayAndNight")
         # creates a table to store the rest of the patient data
         cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
         for i in range(len(patient_num)):
@@ -434,7 +460,7 @@ def surrogate(data):
 
     return surr
 
-def DFA_plot(lag,dfa,patientNum,RR,type): 
+def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type): 
     """
     Plots the Detrended Fluctuation Analysis (DFA) results and computes scaling exponents.
 
@@ -462,20 +488,17 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
         - The function saves the scaling pattern plot to a fixed directory.
     """
      
-    if len(RR)<1000:
-        return (np.nan,np.nan,np.nan),[],[]
+    cross_indx,a1,a2=params
+    cross_point=log_n[cross_indx]
     ax,fig=plt.subplots(2,1,figsize=(12, 8))
     plt.subplot(2,1,1)
     # plots log-log of DFA analysed data against n, cutting off the end where linearality is lost
     # plt.plot(np.log10(lag)[np.where(np.log10(lag)<3)], log_F[np.where(np.log10(lag)<3)], 'o',label='DFA data')
-    log_n=np.log10(lag)
-    log_F=np.log10(dfa)
     plt.plot(log_n, log_F, 'o',label='DFA data',color='g')
     plt.xlabel('logged size of integral slices')
     plt.ylabel('log of fluctuations from fit for each slice size')
     print(type)
     plt.title('DFA - Measure of Randomness in HRV {} Patient {}'.format(type,patientNum))
-    (cross_indx,a1,a2),cross_point=detecting_crossover(log_F,log_n)
     plt.axvline(log_n[cross_indx], color='r', linestyle='--', label="Crossover point")
     # closest=(np.abs(lag - len(RR)/10)).argmin()
     # A_L=10**(np.log10(dfa[closest])-2*np.log10(lag[closest]))
@@ -488,20 +511,14 @@ def DFA_plot(lag,dfa,patientNum,RR,type):
     # H_hat = np.polyfit(log_n[np.where(log_n<3)],np.log10(dfa)[np.where(log_n<3)],1,cov=False)
     # plt.plot(log_n[np.where(log_n<3)],log_n[np.where(log_n<3)]*H_hat[0]+H_hat[1],color='red')
     
-    H_hat1 = np.polyfit(log_n[np.where(log_n<cross_point)],log_F[np.where(log_n<cross_point)],1,cov=False) # fits linear curve to the first section of the DFA plot
     regression_line_1=log_n[np.where(log_n<cross_point)]*H_hat1[0]+H_hat1[1]
     plt.plot(log_n[np.where(log_n<cross_point)],regression_line_1,color='red')
-    H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
     regression_line_2=log_n[np.where(log_n>=cross_point)]*H_hat2[0]+H_hat2[1]
     plt.plot(log_n[np.where(log_n>=cross_point)],regression_line_2,color='blue')
-    ax,m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax)
     plt.subplot(2,1,2)
     plt.axvline(log_n[cross_indx], color='r', linestyle='--')
-    plt.tight_layout()
-    plt.show()
-    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patientNum}-{type}.png')
-    plt.close()
-    return (a1,a2,log_n[cross_indx]),m,logn
+    
+    return (a1,a2,log_n[cross_indx])
 
 def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
 
@@ -558,12 +575,15 @@ def interpolating_for_uniform(logn,log_f):
     smoothed_log_f=spline(uniform_log_n)
     return uniform_log_n,smoothed_log_f
 
-def plotting_scaling_pattern(log_n,log_f,patient_num,ax):
-    plt.subplot(2,1,2)
+def plotting_scaling_pattern(log_n,log_f,patient_num,ax,type):
+    
     interpolated=interpolating_for_uniform(log_n,log_f)
     mask=np.where(interpolated[0]>0.55)
     m,log_f=alpha_beta_filter(*interpolated)
     print(len(m))
+    if ax is None:
+        return m,interpolated[0]
+    plt.subplot(2,1,2)
     if np.max(m)>2:
         plt.ylim(0,np.max(m)+0.5)
     plt.ylim(0,2)
@@ -574,7 +594,11 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,ax):
     plt.xlabel('logged size of integral slices')
     plt.ylabel('gradient at each value of n - $m_{e}(n)$')
     plt.title('continuous gradient over the DFA plot')
-    return ax,m,interpolated[0]
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}-{type}.png')
+    plt.close()
+    return m,interpolated[0]
     #plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}.png')
 
 def ECG_HRV(ECG_RR,patientNum):
@@ -597,11 +621,46 @@ def ECG_HRV(ECG_RR,patientNum):
     plt.close()
     return ECG_RR # returns the RR intervals for the ECG data
 
+def avg_scaling_pattern(scaling_patterns,type):
+    """
+    Computes the average scaling pattern from a DataFrame of scaling patterns.
+
+    Parameters:
+        scaling_patterns (DataFrame): DataFrame containing 'gradient' and 'log_n' columns.
+
+    Returns:
+        tuple: Average gradient and log_n values.
+    """
+    avg_gradient = np.mean([val for sublist in scaling_patterns['gradient'] for val in sublist])
+    avg_log_n = np.mean([val for sublist in scaling_patterns['log_n'] for val in sublist])
+    return avg_gradient, avg_log_n
+
+def plotting_average_scaling_pattern(scaling_patterns,type):
+    """
+    Plots the average scaling pattern from a DataFrame of scaling patterns.
+
+    Parameters:
+        scaling_patterns (DataFrame): DataFrame containing 'gradient' and 'log_n' columns.
+        patientNum (str): Patient number for labeling the plot.
+        type (str): Type of data (e.g., 'PPG', 'ECG') for labeling the plot.
+
+    Returns:
+        None
+    """
+    avg_gradient, avg_log_n = avg_scaling_pattern(scaling_patterns,type)
+    plt.plot(avg_log_n, avg_gradient)
+    plt.title(f'Average Scaling Pattern for {type}')
+    plt.xlabel('Log n')
+    plt.ylabel('Average Gradient')
+    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type}-average.png')
+    plt.close()
+    return avg_gradient, avg_log_n
+
 # %%
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on=True,True,True,True,False
+    months_on,weeks_on,active_on,total_on,day_and_night_on=True,True,True,True,True
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -631,8 +690,8 @@ def main():
                           'Surrogate_data_noise':[]}
     counter=0
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
-    scaling_patterns=pd.DataFrame({'gradient':[],
-                                   'log_n':[]})
+    scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
+    scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
     for i in range(2,10):
         print(i)
         if i==42 or i==24:
@@ -657,23 +716,22 @@ def main():
         ECG_RR=ECG_HRV(ECG_RR,patientNum)
         #surrogate_data=surrogate(RR[0])
 
-        dfa,lag=DFA(RR['HRV'],patientNum)
-        plt.plot(lag,dfa)
-        plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{patientNum}/unlogged_DFA.png')
-        plt.close()
-        H_hat,m,log_n=DFA_plot(lag,dfa,patientNum,RR['HRV'],'PPG')
-        scaling_patterns.loc[i]=[m,log_n]
-        dfa,lag=DFA(ECG_RR,patientNum)
-        H_hat_ECG,m,logn=DFA_plot(lag,dfa,patientNum,ECG_RR,'ECG')
+        H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG')
+        scaling_patterns_PPG.loc[i]=[m,log_n]
+        
+
+        H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG')
+        scaling_patterns_ECG.loc[i]=[m,log_n]
+        
+
         print('H_hat',H_hat)
         print('H_hat_ECG',H_hat_ECG)
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
+    print(scaling_patterns_ECG)
+    plotting_average_scaling_pattern(scaling_patterns_PPG,'PPG')
+    plotting_average_scaling_pattern(scaling_patterns_ECG,'ECG') 
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    avg_gradient=np.mean([val for sublist in scaling_patterns['gradient'] for val in sublist])
-    avg_log_n=np.mean([val for sublist in scaling_patterns['log_n'] for val in sublist])
-    plt.plot(avg_log_n,avg_gradient)
-    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/average.png')
     databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
     
 
