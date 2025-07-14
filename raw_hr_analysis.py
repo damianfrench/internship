@@ -123,12 +123,12 @@ def months_calc(data,number):
 
     return avg_hr_per_month
 
-def week_calc(data,number,time_index):
+def week_calc(data,number):
     # finds the unique weeks in the data
     avg_hr_weekly=[]
-    weeks=np.unique(time_index.isocalendar().week) # finds the unique weeks in the data
+    weeks=np.unique(data['start'].dt.isocalendar().week) # finds the unique weeks in the data
     for w in weeks:
-        mask=(time_index.isocalendar().week==w).to_numpy() # creates a mask for the current week
+        mask=(data['start'].dt.isocalendar().week==w).to_numpy() # creates a mask for the current week
         week_data=data[mask]
         week_x=week_data['start']
         week_y = week_data['value']
@@ -146,7 +146,7 @@ def week_calc(data,number,time_index):
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
     
-    return time_index.to_series().dt.strftime('%G-W%V').unique(),avg_hr_weekly
+    return data['start'].dt.strftime('%G-W%V').unique(),avg_hr_weekly
 
 def active_days_calc(data,number,time_index,patient):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
@@ -294,7 +294,7 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
     if months_on:
         avg_hr_months=months_calc(data,number)
     if weeks_on:
-        weeks,avg_week_hr=week_calc(data,number,time_index)
+        weeks,avg_week_hr=week_calc(data,number)
     if active_on:
         avg_hr_active_day,activities=active_days_calc(data,number,time_index,p)
     if total_on:
@@ -757,7 +757,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if i==42 or i==24:
             continue
