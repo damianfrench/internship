@@ -21,7 +21,25 @@ from patient_analysis3 import patient_output
 
 def sortingHeartRate(number,
                      patient=True):
-    #loads the heartrate data into an array from the file
+    """
+    Loads and sorts heart rate data by timestamp.
+
+    This function reads raw heart rate data from a CSV file corresponding to either
+    a patient or a volunteer, converts the timestamp column to datetime objects,
+    and returns the data sorted by time.
+
+    Parameters:
+        number (int or str): Identifier used to locate the patient's or volunteer's data file.
+        patient (bool, optional): If True, loads data from the patient directory;
+                                  if False, loads from the volunteer directory. Default is True.
+
+    Returns:
+        pandas.DataFrame: Heart rate data sorted by start time, with timestamps parsed as UTC.
+
+    Notes:
+        - Expects the CSV file to contain a 'start' column with ISO8601-formatted timestamps.
+        - File paths are hardcoded and must match the data directory structure.
+    """
     if patient:
         heartRate=(pd.read_csv(f'/data/t/smartWatch/patients/completeData/patData/record{number}/raw_hr_hr.csv',header=0))
     else:
@@ -33,6 +51,27 @@ def sortingHeartRate(number,
 
 def sortingActivityData(number,
                         patient=True):
+    """
+    Loads and parses activity data, returning start and end times.
+
+    This function reads activity time intervals from a CSV file corresponding to either
+    a patient or a volunteer, converts the 'from' and 'to' timestamp columns to datetime objects,
+    and returns them.
+
+    Parameters:
+        number (int or str): Identifier used to locate the patient's or volunteer's activity file.
+        patient (bool, optional): If True, loads data from the patient directory;
+                                  if False, loads from the volunteer directory. Default is True.
+
+    Returns:
+        tuple of pandas.Series:
+            - activities['from']: Series of activity start times as UTC datetime objects.
+            - activities['to']: Series of activity end times as UTC datetime objects.
+
+    Notes:
+        - Assumes activity CSV contains 'from' and 'to' columns in ISO8601 format.
+        - File paths are hardcoded to match the data directory structure.
+    """
     #loads activity data into array and returns the start and end times
     if patient:
         activities=(pd.read_csv(f'/data/t/smartWatch/patients/completeData/patData/record{number}/activities.csv',header=0))
@@ -58,12 +97,12 @@ def split_on_colon(data):
 def only_yearAndmonth(data):
     return np.vstack(np.array([d[:7] for d in data]))
 
-def months_calc(data,number,time_index):
+def months_calc(data,number):
     avg_hr_per_month=[] # list to store the average heart rate for each month
     # finds the unique months in the data and returns them
-    months=np.unique(time_index.month) # finds the unique months in the data
+    months=data['start'].dt.month.unique() # finds the unique months in the data
     for m in months:
-        mask=time_index.month==m # creates a mask for the current month
+        mask=data['start'].dt.month==m # creates a mask for the current month
         month_data=data[mask]
         month_x=month_data['start']
         month_y = month_data['value']
@@ -88,13 +127,10 @@ def week_calc(data,number,time_index):
     # finds the unique weeks in the data
     avg_hr_weekly=[]
     weeks=np.unique(time_index.isocalendar().week) # finds the unique weeks in the data
-    print(weeks)
-    print(time_index.to_series().dt.strftime('%G-W%V').unique())
     for w in weeks:
         mask=(time_index.isocalendar().week==w).to_numpy() # creates a mask for the current week
         week_data=data[mask]
         week_x=week_data['start']
-        print(w)
         week_y = week_data['value']
         avg_hr_weekly.append(np.average(week_y)) # averages the hr for that weeks
         plt.title('Heart rate for week {}'.format(w))
@@ -252,10 +288,11 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
             np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
     time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are  in datetime format
+    data['time_index']=time_index # adds the time index to the data
     months=time_index.to_series().dt.strftime('%b %Y').unique() # finds the unique months in the data
     avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,None,None,None
     if months_on:
-        avg_hr_months=months_calc(data,number,time_index)
+        avg_hr_months=months_calc(data,number)
     if weeks_on:
         weeks,avg_week_hr=week_calc(data,number,time_index)
     if active_on:
@@ -372,16 +409,13 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
 
     if months_on:
         months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y')) #unique months in the metrics dictionary
-        print(months)
         creating_or_updating_tales(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
 
     if weeks_on:
         weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
-        print(weeks)
         creating_or_updating_tales(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
     if active_on:
         activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
-        print(activities)
         creating_or_updating_tales(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
     
     if total_on:
@@ -632,8 +666,10 @@ def avg_scaling_pattern(scaling_patterns,type):
     valid_log_n=log_n[log_n.apply(lambda x: len(x) > 0)]  # Filter out empty lists
     avg_log_n=np.mean(np.array(valid_log_n.tolist()),axis=0)
 
+    std=np.std(np.array(valid_log_n.tolist()),axis=0)
 
-    return avg_gradient, avg_log_n
+
+    return avg_gradient, avg_log_n, std
 
 def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2):
     """
@@ -648,8 +684,8 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
         None
     """
     
-    avg_gradient1, avg_log_n1 = avg_scaling_pattern(scaling_patterns1,type1)
-    avg_gradient2, avg_log_n2 = avg_scaling_pattern(scaling_patterns2,type2)
+    avg_gradient1, avg_log_n1, std1 = avg_scaling_pattern(scaling_patterns1,type1)
+    avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2,type2)
     print('avg_log_n1',avg_log_n1)
     print('avg_log_n2',avg_log_n2)
 
@@ -663,14 +699,20 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
         plt.ylim(0,2)
     # print('Average Gradient:', avg_gradient[mask])
     # print('Average Log n:', avg_log_n[mask])
-    plt.plot(avg_log_n1[mask1], avg_gradient1[mask1], label=f'Average Scaling Pattern - {type1}', color='blue')
-    plt.plot(avg_log_n2[mask2], avg_gradient2[mask2], label=f'Average Scaling Pattern - {type2}', color='orange')
+
+    plt.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='o', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5)
+    plt.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='o', label=f'Average Scaling Pattern - {type2}', capsize=5)
+    plt.plot(avg_log_n1[mask1], avg_gradient1[mask1], color='blue')
+    plt.plot(avg_log_n2[mask2], avg_gradient2[mask2], color='orange')
+
+    
+
     plt.axhline(1,linestyle='dashed',color='k')
     plt.axhline(0.5,linestyle='dashed',color='k')
     plt.axhline(1.5,linestyle='dashed',color='k')
     plt.xlabel('logged size of integral slices')
     plt.ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
-    plt.title(f'Average Scaling Pattern for {type}')
+    plt.title(f'Average Scaling Pattern for {type1} and {type2}')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -683,7 +725,7 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on,DFA_plot_on=False,False,False,True,False,True
+    months_on,weeks_on,active_on,total_on,day_and_night_on,DFA_plot_on=True,True,True,True,True,True
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -732,7 +774,6 @@ def main():
             heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
             RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
         
-            print(patientNum)
         except:
             continue
         ECG_RR=ECG_HRV(ECG_RR,patientNum)
@@ -745,9 +786,6 @@ def main():
         H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=DFA_plot_on)
         scaling_patterns_ECG.loc[i]=[m,log_n]
         
-
-        print('H_hat',H_hat)
-        print('H_hat_ECG',H_hat_ECG)
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
     print(scaling_patterns_ECG)
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG')
@@ -755,12 +793,6 @@ def main():
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
     databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
     
-
-
-
-def ECG_data(Patient_num):
-    print('hello')
-
 
 if __name__=="__main__":
     main()
