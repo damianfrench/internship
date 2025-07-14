@@ -98,6 +98,33 @@ def only_yearAndmonth(data):
     return np.vstack(np.array([d[:7] for d in data]))
 
 def months_calc(data,number):
+    """
+    Calculate and plot average heart rate for each unique month in the dataset.
+
+    This function groups heart rate data by the month extracted from the 'start' datetime column,
+    plots the heart rate values over time for each month, saves each plot to disk, and computes
+    the average heart rate for each month.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        DataFrame containing at least the following columns:
+        - 'start': datetime64[ns, tz] type with timestamps of heart rate measurements.
+        - 'value': numeric heart rate values corresponding to each timestamp.
+    number : int or str
+        Identifier (e.g., patient number) used for saving plot files to a directory.
+
+    Returns
+    -------
+    avg_hr_per_month : list of float
+        List containing the average heart rate for each month in the data.
+
+    Side Effects
+    ------------
+    - Displays a plot of heart rate vs. date for each month.
+    - Saves each monthly heart rate plot as a PNG file in a directory path
+      based on the given `number`.
+    """
     avg_hr_per_month=[] # list to store the average heart rate for each month
     # finds the unique months in the data and returns them
     months=data['start'].dt.month.unique() # finds the unique months in the data
@@ -124,7 +151,35 @@ def months_calc(data,number):
     return avg_hr_per_month
 
 def week_calc(data,number):
-    # finds the unique weeks in the data
+    """
+    Calculate and plot average heart rate for each unique ISO week in the dataset.
+
+    This function extracts the ISO week number from the 'start' datetime column, groups heart rate data by week,
+    plots the heart rate values over time for each week, saves each plot to disk, and computes
+    the average heart rate for each week.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        DataFrame containing at least the following columns:
+        - 'start': datetime64[ns, tz] type with timestamps of heart rate measurements.
+        - 'value': numeric heart rate values corresponding to each timestamp.
+    number : int or str
+        Identifier (e.g., patient number) used for saving plot files to a directory.
+
+    Returns
+    -------
+    weeks : numpy.ndarray of str
+        Array of unique week labels in ISO year-week format (e.g., '2025-W29').
+    avg_hr_weekly : list of float
+        List containing the average heart rate for each week in the data.
+
+    Side Effects
+    ------------
+    - Displays a plot of heart rate vs. date for each week.
+    - Saves each weekly heart rate plot as a PNG file in a directory path
+      based on the given `number`.
+    """
     avg_hr_weekly=[]
     weeks=np.unique(data['start'].dt.isocalendar().week) # finds the unique weeks in the data
     for w in weeks:
@@ -149,6 +204,38 @@ def week_calc(data,number):
     return data['start'].dt.strftime('%G-W%V').unique(),avg_hr_weekly
 
 def active_days_calc(data,number,patient):
+    """
+    Calculate and plot average heart rate for each day with recorded activity.
+
+    This function identifies the days on which activity occurred by loading activity data,
+    normalizes the timestamps in the heart rate data to just dates (removing the time component),
+    then calculates and plots heart rate values for each active day. It also marks the start and
+    end times of activities on the plots using vertical red lines. Each plot is displayed and saved to disk.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        DataFrame containing heart rate data with at least the following columns:
+        - 'start': datetime64 timestamps of heart rate measurements.
+        - 'value': numeric heart rate values.
+    number : int or str
+        Identifier for the patient or volunteer, used to load activity data and save plots.
+    patient : bool
+        If True, load patient activity data; if False, load volunteer activity data.
+
+    Returns
+    -------
+    avg_hr_active_days : list of float
+        List of average heart rates computed for each active day.
+    active_dates : numpy.ndarray of str
+        Array of unique active dates as strings in 'YYYY-MM-DD' format.
+
+    Side Effects
+    ------------
+    - Displays a plot for each active day showing heart rate over time with activity start/end times marked.
+    - Saves plots as PNG files in a directory path based on the provided `number`.
+    """
+
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
     normalised_time_index=data['start'].dt.normalize() # normalises  to remove the time component
     start,end= sortingActivityData(number,patient=patient) # brings in activity data
@@ -180,6 +267,33 @@ def active_days_calc(data,number,patient):
     return avg_hr_active_days,active_dates
 
 def total_timespan(data,number):
+    """
+    Plots heart rate over the entire timespan of the dataset and return heart rate values as a NumPy array.
+
+    This function generates a plot showing the heart rate values across the full duration of the dataset.
+    A horizontal red line is drawn to represent the average heart rate. The plot is displayed and saved
+    to a specified directory. The heart rate values are also returned as a NumPy array.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        DataFrame containing heart rate data with at least the following columns:
+        - 'start': datetime64 timestamps of heart rate measurements.
+        - 'value': numeric heart rate values.
+    number : int or str
+        Identifier used to determine the directory path for saving the plot.
+
+    Returns
+    -------
+    numpy.ndarray
+        A NumPy array of heart rate values (dtype=float64).
+
+    Side Effects
+    ------------
+    - Displays a plot of heart rate over the study duration.
+    - Saves the plot as a PNG file in the directory: 
+    '/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{number}/Full'
+    """
     time_y = data['value']  # extracts the heart rate values from the data
     time_x=data['start']
     plt.title('Heart rate over study')
