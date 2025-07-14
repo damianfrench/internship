@@ -148,9 +148,9 @@ def week_calc(data,number):
     
     return data['start'].dt.strftime('%G-W%V').unique(),avg_hr_weekly
 
-def active_days_calc(data,number,time_index,patient):
+def active_days_calc(data,number,patient):
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
-    normalised_time_index=time_index.normalize() # normalises the time index to remove the time component
+    normalised_time_index=data['start'].dt.normalize() # normalises  to remove the time component
     start,end= sortingActivityData(number,patient=patient) # brings in activity data
     start_time_index=pd.DatetimeIndex(start).normalize() # ensures the activity start times are in datetime format
     active_dates= start_time_index.to_series().dt.strftime('%Y-%m-%d').unique() # finds all unique dates activities were done on
@@ -161,7 +161,7 @@ def active_days_calc(data,number,time_index,patient):
         day_x= day_data['start']
         day_y = day_data['value']
         plt.plot(day_x,day_y,label='HR data')
-        plt.xlabel('Data')
+        plt.xlabel('Dates')
         plt.ylabel('Heart rate [bpm]')
         avg_hr_active_days.append(np.average(day_y))
         day_mask=start_time_index==day # creates a mask for the current day
@@ -195,9 +195,9 @@ def total_timespan(data,number):
     plt.close()
     return time_y.to_numpy(dtype=np.float64)
 
-def days_and_nights(data,number,time_index):
-    night_mask=(time_index.hour>=20) | (time_index.hour<6) # creates a mask for the night time data
-    day_mask=(time_index.hour<20) | (time_index.hour>=6) # creates a mask for the day time data
+def days_and_nights(data,number):
+    night_mask=(data['start'].dt.hour>=20) | (data['start'].dt.hour<6) # creates a mask for the night time data
+    day_mask=(data['start'].dt.hour<20) | (data['start'].dt.hour>=6) # creates a mask for the day time data
     night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
     day_data= data[day_mask] # generates the other data for comparison
     night_y=night_data['value']  # extracts the heart rate values from the data
@@ -215,7 +215,7 @@ def days_and_nights(data,number,time_index):
     plt.show()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
-    df=resting_max_and_min(night_mask,day_mask,time_index,day_y,night_data)
+    df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_data)
 
 
     return np.average(night_y),df
@@ -287,20 +287,19 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
     data['value']=np.array([
             np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
-    time_index=pd.DatetimeIndex(data['start']) # ensures the timestamps are  in datetime format
-    data['time_index']=time_index # adds the time index to the data
-    months=time_index.to_series().dt.strftime('%b %Y').unique() # finds the unique months in the data
+
+    months=data['start'].dt.strftime('%b %Y').unique() # finds the unique months in the data
     avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,None,None,None
     if months_on:
         avg_hr_months=months_calc(data,number)
     if weeks_on:
         weeks,avg_week_hr=week_calc(data,number)
     if active_on:
-        avg_hr_active_day,activities=active_days_calc(data,number,time_index,p)
+        avg_hr_active_day,activities=active_days_calc(data,number,p)
     if total_on:
         time_y=total_timespan(data,number)
     if day_and_night_on :
-        avg_night,df=days_and_nights(data,number,time_index)    
+        avg_night,df=days_and_nights(data,number)   
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "avg_hr_night":avg_night,
@@ -768,12 +767,11 @@ def main():
         
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
-          
+
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
             heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
             RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
-        
         except:
             continue
         ECG_RR=ECG_HRV(ECG_RR,patientNum)
