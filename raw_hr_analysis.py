@@ -635,7 +635,7 @@ def avg_scaling_pattern(scaling_patterns,type):
 
     return avg_gradient, avg_log_n
 
-def plotting_average_scaling_pattern(scaling_patterns,type):
+def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2):
     """
     Plots the average scaling pattern from a DataFrame of scaling patterns.
 
@@ -648,15 +648,23 @@ def plotting_average_scaling_pattern(scaling_patterns,type):
         None
     """
     
-    avg_gradient, avg_log_n = avg_scaling_pattern(scaling_patterns,type)
-    mask=np.where(avg_log_n>0.55)
-    if np.max(avg_gradient)>2:
-        plt.ylim(0,np.max(avg_gradient)+0.5)
+    avg_gradient1, avg_log_n1 = avg_scaling_pattern(scaling_patterns1,type1)
+    avg_gradient2, avg_log_n2 = avg_scaling_pattern(scaling_patterns2,type2)
+    print('avg_log_n1',avg_log_n1)
+    print('avg_log_n2',avg_log_n2)
+
+    mask1=np.where(avg_log_n1>0.55)
+    mask2=np.where(avg_log_n2>0.55)
+    if np.max(avg_gradient1)>2:
+        plt.ylim(0,np.max(avg_gradient1)+0.5)
+    elif np.max(avg_gradient2)>2:
+        plt.ylim(0,np.max(avg_gradient2)+0.5)
     else:
         plt.ylim(0,2)
-    print('Average Gradient:', avg_gradient[mask])
-    print('Average Log n:', avg_log_n[mask])
-    plt.plot(avg_log_n[mask], avg_gradient[mask], label='Average Scaling Pattern', color='blue')
+    # print('Average Gradient:', avg_gradient[mask])
+    # print('Average Log n:', avg_log_n[mask])
+    plt.plot(avg_log_n1[mask1], avg_gradient1[mask1], label=f'Average Scaling Pattern - {type1}', color='blue')
+    plt.plot(avg_log_n2[mask2], avg_gradient2[mask2], label=f'Average Scaling Pattern - {type2}', color='orange')
     plt.axhline(1,linestyle='dashed',color='k')
     plt.axhline(0.5,linestyle='dashed',color='k')
     plt.axhline(1.5,linestyle='dashed',color='k')
@@ -667,9 +675,9 @@ def plotting_average_scaling_pattern(scaling_patterns,type):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
-    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type}-average.png')
+    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type1}-{type2}-average.png')
     plt.close()
-    return avg_gradient, avg_log_n
+    return avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
 
 # %%
 def main():
@@ -707,7 +715,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if i==42 or i==24:
             continue
@@ -742,8 +750,7 @@ def main():
         print('H_hat_ECG',H_hat_ECG)
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
     print(scaling_patterns_ECG)
-    plotting_average_scaling_pattern(scaling_patterns_PPG,'PPG')
-    plotting_average_scaling_pattern(scaling_patterns_ECG,'ECG') 
+    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG')
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
     databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
