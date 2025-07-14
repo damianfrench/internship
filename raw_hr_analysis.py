@@ -92,8 +92,6 @@ def week_calc(data,number,time_index):
     print(time_index.to_series().dt.strftime('%G-W%V').unique())
     for w in weeks:
         mask=(time_index.isocalendar().week==w).to_numpy() # creates a mask for the current week
-        
-        
         week_data=data[mask]
         week_x=week_data['start']
         print(w)
@@ -266,7 +264,6 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
         time_y=total_timespan(data,number)
     if day_and_night_on :
         avg_night,df=days_and_nights(data,number,time_index)    
-    print(len(weeks),len(avg_week_hr))
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "avg_hr_night":avg_night,
@@ -352,14 +349,10 @@ def DFA_analysis(RR,patientNum,type,plot=True):
     m1=params[1]
     m2=params[2]
     H_hat1 = np.polyfit(log_n[np.where(log_n<cross_point)],log_F[np.where(log_n<cross_point)],1,cov=False) # fits linear curve to the first section of the DFA plot
-    regression_line_1=log_n[np.where(log_n<cross_point)]*H_hat1[0]+H_hat1[1]
     
     H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
-    regression_line_2=log_n[np.where(log_n>=cross_point)]*H_hat2[0]+H_hat2[1]
-    if plot==True:
-        ax=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type) # plots the DFA results
-    else:
-        ax=None
+    
+    ax=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot) # plots the DFA results
     m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax,type)
 
     H_hat=(m1,m2 ,cross_point) # returns the scaling exponents and crossover point for PPG data
@@ -396,7 +389,6 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
     
         cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
         for i in range(len(patient_num)):
-            print(metrics['ECG_scaling_exponent_noise'][i])
             cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_night'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
         
     if day_and_night_on:
@@ -460,7 +452,7 @@ def surrogate(data):
 
     return surr
 
-def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type): 
+def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot): 
     """
     Plots the Detrended Fluctuation Analysis (DFA) results and computes scaling exponents.
 
@@ -487,6 +479,8 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type):
           the function returns NaNs to indicate insufficient data.
         - The function saves the scaling pattern plot to a fixed directory.
     """
+    if not plot:
+        return None
      
     cross_indx,a1,a2=params
     cross_point=log_n[cross_indx]
@@ -518,7 +512,7 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type):
     plt.subplot(2,1,2)
     plt.axvline(log_n[cross_indx], color='r', linestyle='--')
     
-    return (a1,a2,log_n[cross_indx])
+    return ax
 
 def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
 
@@ -580,13 +574,13 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,ax,type):
     interpolated=interpolating_for_uniform(log_n,log_f)
     mask=np.where(interpolated[0]>0.55)
     m,log_f=alpha_beta_filter(*interpolated)
-    print(len(m))
     if ax is None:
         return m,interpolated[0]
     plt.subplot(2,1,2)
     if np.max(m)>2:
         plt.ylim(0,np.max(m)+0.5)
-    plt.ylim(0,2)
+    else:
+        plt.ylim(0,2)
     plt.plot(interpolated[0][mask],m[mask])
     plt.axhline(1,linestyle='dashed',color='k')
     plt.axhline(0.5,linestyle='dashed',color='k')
@@ -631,8 +625,14 @@ def avg_scaling_pattern(scaling_patterns,type):
     Returns:
         tuple: Average gradient and log_n values.
     """
-    avg_gradient = np.mean([val for sublist in scaling_patterns['gradient'] for val in sublist])
-    avg_log_n = np.mean([val for sublist in scaling_patterns['log_n'] for val in sublist])
+    gradient= scaling_patterns['gradient']
+    valid_gradient=gradient[gradient.apply(lambda x: len(x) > 0)]
+    avg_gradient=np.mean(np.array(valid_gradient.tolist()),axis=0)  # Calculate the average gradient across all patients
+    log_n=scaling_patterns['log_n']
+    valid_log_n=log_n[log_n.apply(lambda x: len(x) > 0)]  # Filter out empty lists
+    avg_log_n=np.mean(np.array(valid_log_n.tolist()),axis=0)
+
+
     return avg_gradient, avg_log_n
 
 def plotting_average_scaling_pattern(scaling_patterns,type):
@@ -647,11 +647,26 @@ def plotting_average_scaling_pattern(scaling_patterns,type):
     Returns:
         None
     """
+    
     avg_gradient, avg_log_n = avg_scaling_pattern(scaling_patterns,type)
-    plt.plot(avg_log_n, avg_gradient)
+    mask=np.where(avg_log_n>0.55)
+    if np.max(avg_gradient)>2:
+        plt.ylim(0,np.max(avg_gradient)+0.5)
+    else:
+        plt.ylim(0,2)
+    print('Average Gradient:', avg_gradient[mask])
+    print('Average Log n:', avg_log_n[mask])
+    plt.plot(avg_log_n[mask], avg_gradient[mask], label='Average Scaling Pattern', color='blue')
+    plt.axhline(1,linestyle='dashed',color='k')
+    plt.axhline(0.5,linestyle='dashed',color='k')
+    plt.axhline(1.5,linestyle='dashed',color='k')
+    plt.xlabel('logged size of integral slices')
+    plt.ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
     plt.title(f'Average Scaling Pattern for {type}')
-    plt.xlabel('Log n')
-    plt.ylabel('Average Gradient')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
     plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type}-average.png')
     plt.close()
     return avg_gradient, avg_log_n
@@ -660,7 +675,7 @@ def plotting_average_scaling_pattern(scaling_patterns,type):
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on=True,True,True,True,True
+    months_on,weeks_on,active_on,total_on,day_and_night_on,DFA_plot_on=False,False,False,True,False,True
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -692,7 +707,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,10):
+    for i in range(2,50):
         print(i)
         if i==42 or i==24:
             continue
@@ -703,7 +718,6 @@ def main():
         
         #patientNum='data_AMC_1633769065'
         patient_analysis=True
-
           
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
@@ -716,11 +730,11 @@ def main():
         ECG_RR=ECG_HRV(ECG_RR,patientNum)
         #surrogate_data=surrogate(RR[0])
 
-        H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG')
+        H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',plot=DFA_plot_on)
         scaling_patterns_PPG.loc[i]=[m,log_n]
         
 
-        H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG')
+        H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=DFA_plot_on)
         scaling_patterns_ECG.loc[i]=[m,log_n]
         
 
