@@ -699,11 +699,11 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
         plt.ylim(0,2)
     # print('Average Gradient:', avg_gradient[mask])
     # print('Average Log n:', avg_log_n[mask])
-
-    plt.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='o', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5)
-    plt.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='o', label=f'Average Scaling Pattern - {type2}', capsize=5)
-    plt.plot(avg_log_n1[mask1], avg_gradient1[mask1], color='blue')
-    plt.plot(avg_log_n2[mask2], avg_gradient2[mask2], color='orange')
+    plt.figure(figsize=(12, 8))
+    plt.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='.', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
+    plt.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='.', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
+    plt.plot(avg_log_n1[mask1], avg_gradient1[mask1], color='blue',zorder=2)
+    plt.plot(avg_log_n2[mask2], avg_gradient2[mask2], color='orange',zorder=2)
 
     
 
@@ -714,7 +714,7 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     plt.ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
     plt.title(f'Average Scaling Pattern for {type1} and {type2}')
     plt.legend()
-    plt.grid(True)
+    plt.grid(zorder=0)
     plt.tight_layout()
     plt.show()
     plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type1}-{type2}-average.png')
@@ -757,7 +757,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,10):
+    for i in range(2,50):
         print(i)
         if i==42 or i==24:
             continue
