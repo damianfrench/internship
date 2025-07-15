@@ -446,6 +446,53 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
 
 
 def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
+    """
+    Generates and saves various heart rate analysis plots and statistics for a given patient.
+
+    This function performs multiple analyses on heart rate time series data and generates
+    corresponding plots. Depending on the flags provided, it can compute statistics for:
+    - Monthly average heart rate
+    - Weekly average heart rate
+    - Days with physical activity
+    - Overall heart rate trend over the study
+    - Day vs. night heart rate and estimated resting HR
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        DataFrame containing the heart rate data with at least two columns:
+        - 'start': datetime64[ns] timestamps of HR recordings
+        - 'value': heart rate readings (either stringified arrays or numerical values)
+    number : int or str
+        Patient identifier used to create output directory and file names.
+    p : any
+        Patient-specific identifier or object, passed to `active_days_calc`.
+    months_on : bool, optional
+        If True, compute and plot monthly average heart rate. Default is True.
+    weeks_on : bool, optional
+        If True, compute and plot weekly average heart rate. Default is True.
+    active_on : bool, optional
+        If True, compute and plot HR on days with recorded activity. Default is True.
+    total_on : bool, optional
+        If True, generate a full-study HR plot and calculate HRV. Default is True.
+    day_and_night_on : bool, optional
+        If True, analyze HR during night-time vs. daytime and estimate resting HR. Default is True.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the following keys and their computed values:
+        - "HRV": numpy.ndarray, inverse of heart rate values (if total_on is True)
+        - "avg_hr_months": list of monthly average heart rates (or None)
+        - "avg_hr_night": float, average night-time HR (or None)
+        - "average_hr": float, overall average HR across the study
+        - "months": list of month labels (e.g., ['Jan 2024', 'Feb 2024', ...])
+        - "avg_week_hr": list of weekly average heart rates (or None)
+        - "avg_active_hr": list of HR values on active days (or None)
+        - "weeks": list of ISO weeks corresponding to the data (or None)
+        - "active_days": list of active dates (or None)
+        - "resting_plus_more": DataFrame of daily day/night HR statistics including resting HR (or None)
+    """
     Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
     ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
     data['value']=np.array([
@@ -476,6 +523,32 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
             "resting_plus_more":df}
 
 def detecting_crossover(log_F,log_n):
+    """
+    Detects the optimal crossover point in a log-log plot by maximizing the combined R² of two linear fits.
+
+    This function attempts to find the best point to split the data into two segments,
+    each of which is fit with a linear regression. It identifies the point where the sum
+    of the R² values (goodness of fit) of the two regressions is highest, while also penalizing
+    unbalanced splits.
+
+    Parameters
+    ----------
+    log_F : array-like
+        Array of log-transformed dependent variable values (e.g., log power).
+    log_n : array-like
+        Array of log-transformed independent variable values (e.g., log frequency).
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - best_split_index : int
+            Index at which to split the data for the best combined fit.
+        - slope1 : float
+            Slope of the linear regression before the split.
+        - slope2 : float
+            Slope of the linear regression after the split.
+    """
     best_split=None
     best_score=-np.inf
     results=[]
@@ -483,8 +556,8 @@ def detecting_crossover(log_F,log_n):
     for i in range(min_points, len(log_n) - min_points):
         x1, y1 = log_n[:i], log_F[:i]
         x2, y2 = log_n[i:], log_F[i:]
-        slope1, _, r1, _, _ = linregress(x1, y1)
-        slope2, _, r2, _, _ = linregress(x2, y2)
+        slope1, _, r1, p, _ = linregress(x1, y1)
+        slope2, _, r2, p, _ = linregress(x2, y2)
         total_r_squared=r1**2+r2**2
         balance_penalty = min(len(x1), len(x2)) / len(log_n)
         total_r_squared *= balance_penalty
@@ -494,6 +567,20 @@ def detecting_crossover(log_F,log_n):
     return best_split
 
 def detecting_outliers(ECG_RR):
+    """
+    Identifies and removes outlier RR intervals based on a simple rolling average threshold.
+
+    For each RR interval (starting from index 6), this function compares it to the mean
+    of the previous 5 intervals. If it exceeds 120% of that average, it is marked as an outlier.
+
+    Parameters:
+        ECG_RR (array-like): A sequence of RR interval values (e.g., in milliseconds or seconds).
+
+    Returns:
+        mask (np.ndarray): A boolean mask array of the same length as ECG_RR.
+                           Entries marked `False` indicate detected outliers;
+                           `True` indicates normal data points.
+    """
     outliers=[]
     for i in range(6,len(ECG_RR)): # finds the outliers in the HRV graph where a value is greater than 120% of the average of the previous 5.
         last_5_mean=np.mean(ECG_RR[i-6:i-1])
@@ -505,7 +592,21 @@ def detecting_outliers(ECG_RR):
     return mask
 
 def DFA(RR):
-    
+    """
+    Performs Detrended Fluctuation Analysis (DFA) on a time series of RR intervals.
+
+    DFA is a method used to detect long-range correlations in non-stationary time series.
+    It integrates the RR series, divides it into windows of various sizes, detrends each
+    window using linear regression, and calculates the root-mean-square fluctuation
+    within each window.
+
+    Parameters:
+        RR (array-like): A sequence of RR intervals (typically in milliseconds or seconds).
+
+    Returns:
+        F_s (np.ndarray): The root-mean-square fluctuation for each window size.
+        window_sizes (np.ndarray): The array of window sizes used in the DFA.
+    """
     window_sizes=np.unique(np.logspace(0.5, np.log10(len(RR)), 100).astype(int)) # produces an array of varying window sizes scaled for logspace
 
     y=np.cumsum(RR - np.mean(RR)) # produces an inegration curve of each point - average
@@ -524,7 +625,24 @@ def DFA(RR):
     F_s=np.array(F_s)
     return F_s,window_sizes
 
-def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix,column_matrix):
+def creating_or_updating_tables(con,table_name,columns,patient_num,value_matrix,column_matrix):
+    """
+    Creates or updates a SQLite table with patient data.
+
+    This function performs the following:
+    1. Creates a new table with the given name and a primary key column 'Number'.
+    2. Adds additional columns to the table based on the provided list.
+    3. Inserts or updates rows for each patient based on the column/value matrices.
+
+    Parameters:
+        con (sqlite3.Connection): An active SQLite database connection object.
+        table_name (str): The name of the table to create or update.
+        columns (list of str): A list of column names to add to the table.
+        patient_num (list of str or int): Patient identifiers used as primary keys.
+        value_matrix (list of list): Matrix containing values to insert or update in the table.
+        column_matrix (list of list): Matrix containing corresponding column names for each value.
+
+    """
     cur=con.cursor()
     cur.execute(f"CREATE TABLE {table_name}(Number TEXT, PRIMARY KEY(Number))") # creates a new table with the specified columns
     adding_columns_command=";".join([f"ALTER TABLE {table_name} ADD COLUMN '{col}' TEXT" for col in columns]) # creates a command to add the columns to the table
@@ -555,14 +673,52 @@ def DFA_analysis(RR,patientNum,data_type,plot=True):
     
     H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
     
-    ax=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,data_type,plot) # plots the DFA results
-    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax,data_type)
+    ax,fig=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,data_type,plot) # plots the DFA results
+    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,fig,ax,data_type)
 
     H_hat=(m1,m2 ,cross_point) # returns the scaling exponents and crossover point for PPG data
     return H_hat,m,logn
 
 
 def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
+    """
+    Creates and populates a SQLite database with various patient or volunteer heart rate metrics.
+
+    Depending on the enabled flags, this function builds tables for:
+    - Average monthly heart rates
+    - Weekly heart rates
+    - Active day heart rates
+    - General patient metrics (e.g., average HR, scaling exponents)
+    - Day vs. night HR statistics
+
+    Parameters:
+        metrics (dict): A dictionary containing all heart rate and patient-related metrics. Expected keys include:
+            - 'Patient_num': list of patient IDs
+            - 'months': list of lists of month labels (e.g., ['Jan 2025', ...])
+            - 'avg_hr_per_month': list of lists of average HR values per month
+            - 'weeks': list of lists of week labels (e.g., ['2025-W12', ...])
+            - 'avg_hr_per_week': list of lists of average HR values per week
+            - 'activities': list of lists of activity date strings
+            - 'avg_hr_active': list of lists of average HRs during activity
+            - 'avg_hr_night': list of average night heart rates
+            - 'avg_hr_overall': list of overall average heart rates
+            - 'scaling_exponent_noise', 'scaling_exponent_linear': PPG DFA exponents
+            - 'ECG_scaling_exponent_noise', 'ECG_scaling_exponent_linear': ECG DFA exponents
+            - 'crossover_PPG', 'crossover_ECG': crossover points for DFA plots
+            - 'days', 'day_avg', 'night_avg', 'day_min', 'night_min', 'day_max', 'night_max', 'resting_hr': time-series metrics
+        patient (bool): If True, saves data to `patient_metrics.db`; else saves to `volunteer_metrics.db`.
+        months_on (bool): If True, includes and stores monthly average HR data.
+        weeks_on (bool): If True, includes and stores weekly average HR data.
+        active_on (bool): If True, includes and stores average HR during active periods.
+        total_on (bool): If True, stores overall patient metrics like averages and scaling exponents.
+        day_and_night_on (bool): If True, stores daily HR metrics (day/night/resting).
+
+    Notes:
+        - Existing tables will be dropped before being recreated.
+        - Tables created: Months, Weeks, Active, Patients, DayAndNight
+        - Relationships are defined via the 'Number' column as a key between tables.
+
+    """
     db_name = 'patient_metrics.db' if patient else 'volunteer_metrics.db'
     con = sqlite3.connect(db_name)
     cur = con.cursor()
@@ -576,14 +732,14 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
 
     if months_on:
         months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y')) #unique months in the metrics dictionary
-        creating_or_updating_tales(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
+        creating_or_updating_tables(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
 
     if weeks_on:
         weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
-        creating_or_updating_tales(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
+        creating_or_updating_tables(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
     if active_on:
         activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
-        creating_or_updating_tales(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
+        creating_or_updating_tables(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
     
     if total_on:
         
@@ -705,9 +861,44 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot):
     ax[0].plot(log_n[np.where(log_n>=cross_point)],regression_line_2,color='blue')
     plt.axvline(log_n[cross_indx], color='r', linestyle='--')
     
-    return ax[1]
+    return ax[1],fig
 
 def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
+    """
+    Appends a new set of heart rate and DFA analysis metrics to a cumulative dictionary.
+
+    This function updates the `metrics` dictionary with data from a single patient or recording session.
+    It extracts key heart rate summary statistics, DFA scaling exponents, and day/night analysis results
+    from the input parameters and appends them to the corresponding lists in the dictionary.
+
+    Parameters:
+        metrics (dict): A dictionary containing aggregated metrics across multiple patients or sessions.
+                        Must contain pre-initialized keys such as:
+                            'Patient_num', 'avg_hr_per_month', 'avg_hr_night', 'avg_hr_overall',
+                            'avg_hr_active', 'scaling_exponent_noise', 'scaling_exponent_linear',
+                            'ECG_scaling_exponent_noise', 'ECG_scaling_exponent_linear',
+                            'crossover_PPG', 'crossover_ECG', 'avg_hr_per_week', 'months',
+                            'weeks', 'activities', 'days', 'day_avg', 'night_avg', 'day_min',
+                            'night_min', 'day_max', 'night_max', 'resting_hr'
+
+        patientNum (str or int): Unique identifier for the patient or data session.
+
+        RR (dict): A dictionary of processed heart rate and temporal features, typically the output of the `plotting()` function.
+                   Expected keys include:
+                        'avg_hr_months', 'avg_hr_night', 'average_hr', 'avg_active_hr',
+                        'avg_week_hr', 'months', 'weeks', 'active_days', 'resting_plus_more'
+
+        H_hat (tuple): DFA results from PPG, expected to be (scaling_noise, scaling_linear, crossover_point_PPG)
+
+        H_hat_ECG (tuple): DFA results from ECG, expected to be (scaling_noise, scaling_linear, crossover_point_ECG)
+
+    Returns:
+        dict: The updated `metrics` dictionary with the new values appended.
+
+    Notes:
+        - If the `resting_plus_more` DataFrame is missing or malformed, the day/night/resting HR data is skipped.
+        - This function assumes the `metrics` dictionary already contains all necessary keys with list values.
+    """
 
     metrics['Patient_num'].append(patientNum)
     metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
@@ -739,6 +930,28 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     return metrics
 
 def alpha_beta_filter(x,y,Q=500):
+    """
+    Applies an adaptive alpha-beta filter to estimate the smoothed signal and its first derivative (slope).
+
+    This filter is designed to reduce noise in a signal while tracking its underlying trend (gradient).
+    The alpha and beta coefficients are dynamically computed based on the current index and capped at `Q`
+    to prevent instability over long sequences.
+
+    Parameters:
+        x (np.ndarray): 1D array of independent variable values (e.g., time).
+        y (np.ndarray): 1D array of noisy measurements or signal values corresponding to `x`.
+        Q (int): The maximum effective "memory" window size (default is 500). Beyond this, alpha/beta stop adapting.
+
+    Returns:
+        m_est (np.ndarray): Estimated first derivative (slope) at each point in `x`.
+        G_est (np.ndarray): Smoothed signal estimate corresponding to each `x`.
+
+    Notes:
+        - This is a discrete version of the alpha-beta filter adapted for uniformly spaced data.
+        - For large Q, the filter responds slower to changes but is more stable.
+        - If Q is small, the filter is more responsive but potentially noisier.
+
+    """
     d=x[1]-x[0]
     N=len(x)
     m_est=np.zeros(N)
@@ -757,13 +970,55 @@ def alpha_beta_filter(x,y,Q=500):
     return m_est,G_est
 
 def interpolating_for_uniform(logn,log_f):
+    """
+    Interpolates and smooths log-log data onto a uniformly spaced grid using a spline.
+
+    This function takes log-transformed x (`logn`) and y (`log_f`) data, and fits a smoothing spline.
+    The resulting smoothed data is evaluated on a uniformly spaced array of `logn` values, which
+    can be useful for further numerical analysis, plotting, or regression.
+
+    Parameters:
+        logn (np.ndarray): Log-transformed x-values (e.g., log(window sizes)).
+        log_f (np.ndarray): Log-transformed y-values (e.g., log(fluctuation function)).
+
+    Returns:
+        uniform_log_n (np.ndarray): Uniformly spaced logn values (100 points between logn.min() and logn.max()).
+        smoothed_log_f (np.ndarray): Smoothed and interpolated log_f values corresponding to `uniform_log_n`.
+
+    Notes:
+        - Uses a `UnivariateSpline` with `s=0` (interpolating spline, no smoothing).
+
+    """
     uniform_log_n=np.linspace(logn.min(),logn.max(),100)
     spline=UnivariateSpline(logn,log_f,s=0)
     smoothed_log_f=spline(uniform_log_n)
     return uniform_log_n,smoothed_log_f
 
-def plotting_scaling_pattern(log_n,log_f,patient_num,ax,type):
-    
+def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type):
+    """
+    Plots the local scaling exponent (slope) across scales using alpha-beta filtering on DFA data.
+
+    This function:
+    - Interpolates the log-log DFA data for uniform spacing.
+    - Applies an alpha-beta filter to estimate the local slope (scaling exponent).
+    - Optionally plots the resulting local slope vs log(window size) on the provided axes.
+    - Saves the plot to a file if plotting is enabled (i.e., ax is not None).
+
+    Parameters:
+        log_n (np.ndarray): Log-transformed window sizes from DFA.
+        log_f (np.ndarray): Log-transformed fluctuation function values from DFA.
+        patient_num (str): Identifier for the patient (used for saving the plot).
+        ax (matplotlib.axes.Axes or None): Axes object to draw the plot on. If None, no plot is generated.
+        type (str): A label specifying whether the data is from PPG, ECG, etc. Used in the filename.
+
+    Returns:
+        m (np.ndarray): Estimated local scaling exponent at each interpolated log_n.
+        interpolated[0] (np.ndarray): Interpolated log_n values (uniformly spaced).
+
+    Notes:
+        - Dashed lines at 0.5, 1.0, and 1.5 are plotted as visual references.
+
+    """
     interpolated=interpolating_for_uniform(log_n,log_f)
     mask=np.where(interpolated[0]>0.55)
     m,log_f=alpha_beta_filter(*interpolated)
@@ -781,28 +1036,26 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,ax,type):
     ax.set_ylabel('gradient at each value of n - $m_{e}(n)$')
     ax.set_title('continuous gradient over the DFA plot')
     plt.show()
-    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}-{type}.png')
+    fig.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}-{type}.png')
     plt.close()
     return m,interpolated[0]
-    #plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}.png')
 
 def ECG_HRV(ECG_RR,patientNum):
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
-    plt.plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
-    plt.title('ECG HRV')
-    plt.ylabel('RR interval (s)')
-    plt.xlabel('Beats')
-    plt.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV".format(patientNum))
-    plt.close()
+    fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constricted')
+    ax[0].plot(np.arange(0,len(ECG_RR)+1),ECG_RR)
+    ax[0].set_title('ECG HRV')
+    ax[0].set_ylabel('RR interval (s)')
+    ax[0].set_xlabel('Beats')
     mask=detecting_outliers(ECG_RR)
     ECG_RR=ECG_RR[mask] # removes outliers
     
-    plt.plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
-    plt.title('ECG HRV Filtered')
-    plt.ylabel('RR interval (s)')
-    plt.xlabel('Beats')
-    plt.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV_Filtered".format(patientNum))
+    ax[1].plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
+    ax[1].title('ECG HRV Filtered')
+    ax[1].ylabel('RR interval (s)')
+    ax[1].xlabel('Beats')
+    fig.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV".format(patientNum))
     plt.close()
     return ECG_RR # returns the RR intervals for the ECG data
 
