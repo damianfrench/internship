@@ -133,14 +133,14 @@ def months_calc(data,number):
         month_data=data[mask]
         month_x=month_data['start']
         month_y = month_data['value']
-        plt.title('Heart rate for month {}'.format(m))
-        plt.plot(month_x,month_y,label='HR data') # plots the heart rate data for this month
-        plt.xlabel('Date')
-        plt.ylabel('Heart rate [bpm]')
-        plt.tick_params(axis='x',labelrotation=45,length=0.1)
-        plt.tight_layout()
+        fig,ax=plt.subplots(figsize=(12,6),layout='constrained')
+        ax.set_title('Heart rate for month {}'.format(m))
+        ax.plot(month_x,month_y,label='HR data') # plots the heart rate data for this month
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Heart rate [bpm]')
+        ax.tick_params(axis='x',labelrotation=45,length=0.1)
         
-        plt.legend()
+        ax.legend()
         plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
@@ -188,14 +188,14 @@ def week_calc(data,number):
         week_x=week_data['start']
         week_y = week_data['value']
         avg_hr_weekly.append(np.average(week_y)) # averages the hr for that weeks
-        plt.title('Heart rate for week {}'.format(w))
-        plt.plot(week_x,week_y,label='HR data') # plots the heart rate data for this week
-        plt.xlabel('Date')
-        plt.ylabel('Heart rate [bpm]')
-        plt.tick_params(axis='x',labelrotation=45,length=0.1)
-        plt.tight_layout()
+        fig,ax=plt.subplots(figsize=(12,6),layout='constrained')
+        ax.set_title('Heart rate for week {}'.format(w))
+        ax.plot(week_x,week_y,label='HR data') # plots the heart rate data for this week
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Heart rate [bpm]')
+        ax.tick_params(axis='x',labelrotation=45,length=0.1)
         
-        plt.legend()
+        ax.legend()
         plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
@@ -244,23 +244,23 @@ def active_days_calc(data,number,patient):
     for day in active_dates: # loops through the days activity was done on
         mask=normalised_time_index==day   
         day_data=data[mask]
-        plt.title('Heart rate on  day with activity: {}'.format(day))
+        fig,ax=plt.subplots(figsize=(12,6),layout='constrained')
+        ax.set_title('Heart rate on  day with activity: {}'.format(day))
         day_x= day_data['start']
         day_y = day_data['value']
-        plt.plot(day_x,day_y,label='HR data')
-        plt.xlabel('Dates')
-        plt.ylabel('Heart rate [bpm]')
+        ax.plot(day_x,day_y,label='HR data')
+        ax.set_xlabel('Dates')
+        ax.set_ylabel('Heart rate [bpm]')
         avg_hr_active_days.append(np.average(day_y))
         day_mask=start_time_index==day # creates a mask for the current day
         active_starts=start[day_mask] # generates the datetime objects for the activities done on the current day
         active_ends=end[day_mask]
         for i in active_starts:
-            plt.axvline(pd.to_datetime(i, format='ISO8601',utc=True),color='red')
+            ax.axvline(pd.to_datetime(i, format='ISO8601',utc=True),color='red')
         for j in active_ends:
-            plt.axvline(pd.to_datetime(j, format='ISO8601',utc=True),color='red')
-        plt.tick_params(axis='x',labelrotation=90,length=0.1)
-        plt.tight_layout()
-        plt.legend()
+            ax.axvline(pd.to_datetime(j, format='ISO8601',utc=True),color='red')
+        ax.tick_params(axis='x',labelrotation=90,length=0.1)
+        ax.legend()
         plt.show()
         plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day))
         plt.close()
@@ -296,20 +296,41 @@ def total_timespan(data,number):
     """
     time_y = data['value']  # extracts the heart rate values from the data
     time_x=data['start']
-    plt.title('Heart rate over study')
-    plt.plot(time_x,time_y,label='HR data')
-    plt.xlabel('Date')
-    plt.ylabel('Heart rate [bpm]')
-    plt.axhline(np.average(time_y),color='red')
-    plt.tick_params(axis='x',labelrotation=90,length=0.1)
-    plt.tight_layout()
-    plt.legend()
+    fig,ax=plt.subplots(figsize=(12,6),layout='constrained')
+    ax.set_title('Heart rate over study')
+    ax.plot(time_x,time_y,label='HR data')
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Heart rate [bpm]')
+    ax.axhline(np.average(time_y),color='red')
+    ax.tick_params(axis='x',labelrotation=90,length=0.1)
+    ax.legend()
     plt.show()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
     plt.close()
     return time_y.to_numpy(dtype=np.float64)
 
 def days_and_nights(data,number):
+    """
+    Analyze and plot night-time heart rate data, then calculate daily heart rate statistics.
+
+    This function separates the input heart rate data into day and night segments based on the
+    hour of each timestamp. Night is defined as 8 PM to 6 AM. It plots heart rate values during 
+    night-time across the entire study duration and saves the figure. It then computes summary 
+    statistics and estimated resting heart rates per day using the `resting_max_and_min` function.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        DataFrame containing heart rate data. Must have a 'start' datetime column and a 'value' column for heart rate.
+    number : int or str
+        Identifier used to construct the save path for output plots.
+
+    Returns
+    -------
+    tuple
+        - float : The average heart rate during night-time.
+        - pandas.DataFrame : A DataFrame with daily heart rate statistics and estimated resting HR, returned from `resting_max_and_min`.
+    """
     night_mask=(data['start'].dt.hour>=20) | (data['start'].dt.hour<6) # creates a mask for the night time data
     day_mask=(data['start'].dt.hour<20) | (data['start'].dt.hour>=6) # creates a mask for the day time data
     night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
@@ -318,23 +339,52 @@ def days_and_nights(data,number):
     day_y=day_data['value']  # extracts the heart rate values from the data
     night_x=night_data['start']
     day_x=day_data['start']
-    plt.title('Heart rates over study - nights only')
-    plt.plot(night_x,night_y,label='HR data')
-    plt.xlabel('Date')
-    plt.ylabel('Heart rate [bpm]')
-    plt.axhline(np.average(night_y),color='red')
-    plt.tick_params(axis='x',labelrotation=90,length=0.1)
-    plt.tight_layout()
-    plt.legend()
+    fig,ax=plt.subplots(figsize=(12,6),layout='constrained')
+    ax.set_title('Heart rates over study - nights only')
+    ax.plot(night_x,night_y,label='HR data')
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Heart rate [bpm]')
+    ax.axhline(np.average(night_y),color='red')
+    ax.tick_params(axis='x',labelrotation=90,length=0.1)
+    ax.legend()
     plt.show()
     plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
-    df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_data)
+    df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y)
 
 
     return np.average(night_y),df
 
 def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
+    """
+    Calculate daily statistics for day and night heart rate, including an estimate of resting heart rate.
+
+    This function calculates daily averages, minimums, and maximums for heart rate during both day and 
+    night periods. It also estimates the resting heart rate each night by finding the lowest 5-point 
+    moving average from the night-time heart rate data.
+
+    Parameters
+    ----------
+    night_mask : pandas.Series or np.ndarray
+        Boolean mask for filtering night-time entries from the original dataset.
+    day_mask : pandas.Series or np.ndarray
+        Boolean mask for filtering day-time entries from the original dataset.
+    time_index : pandas.Series
+        Datetime values corresponding to the original dataset's timestamps (typically `data['start'].dt`).
+    day_data : pandas.Series
+        Heart rate values corresponding to the day-time mask.
+    night_data : pandas.Series
+        Heart rate values corresponding to the night-time mask.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing the following columns for each date:
+        - 'date'
+        - 'avg_day', 'min_day', 'max_day'
+        - 'avg_night', 'min_night', 'max_night'
+        - 'resting_hr' : minimum 5-point rolling average during night-time
+    """
     results=[]
     resting_hr=pd.DataFrame({'date':[],
                              'resting_hr':[]})
@@ -359,7 +409,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
         night_mask_i= time_index.normalize()[night_mask] == day # creates a mask for the current night
 
   
-        night_vals=night_data[night_mask_i]['value'].to_numpy(dtype=np.float64) # gets the heart rate data for nights
+        night_vals=night_data[night_mask_i] # gets the heart rate data for nights
 
 
         if len(night_vals)>0:
@@ -403,7 +453,7 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
 
     months=data['start'].dt.strftime('%b %Y').unique() # finds the unique months in the data
-    avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,None,None,None
+    avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,np.nan,None,None
     if months_on:
         avg_hr_months=months_calc(data,number)
     if weeks_on:
@@ -487,10 +537,13 @@ def creating_or_updating_tales(con,table_name,columns,patient_num,value_matrix,c
             except:
                 cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(value_matrix[i][j],patient_num[i])) # updates the subsequent values in the table
 
-def DFA_analysis(RR,patientNum,type,plot=True):
+def DFA_analysis(RR,patientNum,data_type,plot=True):
     """ Performs Detrended Fluctuation Analysis (DFA) on the RR intervals and returns scaling exponents."""
+    if type(RR)!=np.ndarray:
+        return (np.nan,np.nan,np.nan),[],[]
     if len(RR)<1000:
         return (np.nan,np.nan,np.nan),[],[]
+    
     F_s,window_sizes=DFA(RR) # performs DFA on the data
     log_n=np.log10(window_sizes)
     log_F=np.log10(F_s)
@@ -502,11 +555,12 @@ def DFA_analysis(RR,patientNum,type,plot=True):
     
     H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
     
-    ax=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot) # plots the DFA results
-    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax,type)
+    ax=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,data_type,plot) # plots the DFA results
+    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,ax,data_type)
 
     H_hat=(m1,m2 ,cross_point) # returns the scaling exponents and crossover point for PPG data
     return H_hat,m,logn
+
 
 def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
     db_name = 'patient_metrics.db' if patient else 'volunteer_metrics.db'
@@ -544,11 +598,6 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
         for i in range(len(patient_num)):
             for j in range(len(metrics['days'][i])):
                 cur.execute("""INSERT INTO DayAndNight(Number,date,day_avg,night_avg,day_min,night_min,day_max,night_max,resting_hr) VALUES (?,?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['days'][i][j],metrics['day_avg'][i][j],metrics['night_avg'][i][j],metrics['day_min'][i][j],metrics['night_min'][i][j],metrics['day_max'][i][j],metrics['night_max'][i][j],metrics['resting_hr'][i][j]))
-
-        
-
-
-
 
     con.commit() # commits and closes the database
     con.close()
@@ -626,40 +675,37 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot):
           the function returns NaNs to indicate insufficient data.
         - The function saves the scaling pattern plot to a fixed directory.
     """
-    if not plot:
+    if not plot: 
         return None
      
     cross_indx,a1,a2=params
     cross_point=log_n[cross_indx]
-    ax,fig=plt.subplots(2,1,figsize=(12, 8))
-    plt.subplot(2,1,1)
+    fig,ax=plt.subplots(2,1,figsize=(12, 8),layout='constrained')
     # plots log-log of DFA analysed data against n, cutting off the end where linearality is lost
     # plt.plot(np.log10(lag)[np.where(np.log10(lag)<3)], log_F[np.where(np.log10(lag)<3)], 'o',label='DFA data')
-    plt.plot(log_n, log_F, 'o',label='DFA data',color='g')
-    plt.xlabel('logged size of integral slices')
-    plt.ylabel('log of fluctuations from fit for each slice size')
-    print(type)
-    plt.title('DFA - Measure of Randomness in HRV {} Patient {}'.format(type,patientNum))
-    plt.axvline(log_n[cross_indx], color='r', linestyle='--', label="Crossover point")
+    ax[0].plot(log_n, log_F, 'o',label='DFA data',color='g')
+    ax[0].set_xlabel('logged size of integral slices')
+    ax[0].set_ylabel('log of fluctuations from fit for each slice size')
+    
+    ax[0].set_title('DFA - Measure of Randomness in HRV {} Patient {}'.format(type,patientNum))
+    ax[0].axvline(log_n[cross_indx], color='r', linestyle='--', label="Crossover point")
     # closest=(np.abs(lag - len(RR)/10)).argmin()
     # A_L=10**(np.log10(dfa[closest])-2*np.log10(lag[closest]))
     # Linear_trend=(A_L)*lag**2
     # plt.plot(log_n,np.log10(Linear_trend))
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
+    ax[0].grid(True)
+    ax[0].legend()
     # fits a linear line to the log-log graph
     # H_hat = np.polyfit(log_n[np.where(log_n<3)],np.log10(dfa)[np.where(log_n<3)],1,cov=False)
     # plt.plot(log_n[np.where(log_n<3)],log_n[np.where(log_n<3)]*H_hat[0]+H_hat[1],color='red')
     
     regression_line_1=log_n[np.where(log_n<cross_point)]*H_hat1[0]+H_hat1[1]
-    plt.plot(log_n[np.where(log_n<cross_point)],regression_line_1,color='red')
+    ax[0].plot(log_n[np.where(log_n<cross_point)],regression_line_1,color='red')
     regression_line_2=log_n[np.where(log_n>=cross_point)]*H_hat2[0]+H_hat2[1]
-    plt.plot(log_n[np.where(log_n>=cross_point)],regression_line_2,color='blue')
-    plt.subplot(2,1,2)
+    ax[0].plot(log_n[np.where(log_n>=cross_point)],regression_line_2,color='blue')
     plt.axvline(log_n[cross_indx], color='r', linestyle='--')
     
-    return ax
+    return ax[1]
 
 def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
 
@@ -723,19 +769,17 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,ax,type):
     m,log_f=alpha_beta_filter(*interpolated)
     if ax is None:
         return m,interpolated[0]
-    plt.subplot(2,1,2)
     if np.max(m)>2:
-        plt.ylim(0,np.max(m)+0.5)
+        ax.set_ylim(0,np.max(m)+0.5)
     else:
-        plt.ylim(0,2)
-    plt.plot(interpolated[0][mask],m[mask])
-    plt.axhline(1,linestyle='dashed',color='k')
-    plt.axhline(0.5,linestyle='dashed',color='k')
-    plt.axhline(1.5,linestyle='dashed',color='k')
-    plt.xlabel('logged size of integral slices')
-    plt.ylabel('gradient at each value of n - $m_{e}(n)$')
-    plt.title('continuous gradient over the DFA plot')
-    plt.tight_layout()
+        ax.set_ylim(0,2)
+    ax.plot(interpolated[0][mask],m[mask])
+    ax.axhline(1,linestyle='dashed',color='k')
+    ax.axhline(0.5,linestyle='dashed',color='k')
+    ax.axhline(1.5,linestyle='dashed',color='k')
+    ax.set_xlabel('logged size of integral slices')
+    ax.set_ylabel('gradient at each value of n - $m_{e}(n)$')
+    ax.set_title('continuous gradient over the DFA plot')
     plt.show()
     plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}-{type}.png')
     plt.close()
@@ -784,7 +828,7 @@ def avg_scaling_pattern(scaling_patterns,type):
 
     return avg_gradient, avg_log_n, std
 
-def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2):
+def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,plot_on=True):
     """
     Plots the average scaling pattern from a DataFrame of scaling patterns.
 
@@ -799,38 +843,47 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     
     avg_gradient1, avg_log_n1, std1 = avg_scaling_pattern(scaling_patterns1,type1)
     avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2,type2)
-    print('avg_log_n1',avg_log_n1)
-    print('avg_log_n2',avg_log_n2)
-
-    mask1=np.where(avg_log_n1>0.55)
+    if plot_on==False:
+        avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
+    print('avg_grad_1',avg_gradient1)
+    print('avg_grad_1',avg_gradient2)
+    try:
+        mask1=np.where(avg_log_n1>0.55)
+    except:
+        print('total_on must be activated for PPG HRV data to be extracted')
+        return np.nan,np.nan,np.nan,np.nan
     mask2=np.where(avg_log_n2>0.55)
-    if np.max(avg_gradient1)>2:
-        plt.ylim(0,np.max(avg_gradient1)+0.5)
-    elif np.max(avg_gradient2)>2:
-        plt.ylim(0,np.max(avg_gradient2)+0.5)
+    fig,ax=plt.subplots(figsize=(12, 8),layout='constrained')
+    if np.max(avg_gradient1[mask1])>2:
+        print('1')
+        ax.set_ylim(0,np.max(avg_gradient1[mask1])+0.5)
+        print(np.max(avg_gradient1)+0.5)
+    elif np.max(avg_gradient2[mask2])>2:
+        print('2')
+        ax.set_ylim(0,np.max(avg_gradient2[mask2])+0.5)
     else:
-        plt.ylim(0,2)
+        print('3')
+        ax.set_ylim(0,2)
     # print('Average Gradient:', avg_gradient[mask])
     # print('Average Log n:', avg_log_n[mask])
-    plt.figure(figsize=(12, 8))
-    plt.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='.', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
-    plt.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='.', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
-    plt.plot(avg_log_n1[mask1], avg_gradient1[mask1], color='blue',zorder=2)
-    plt.plot(avg_log_n2[mask2], avg_gradient2[mask2], color='orange',zorder=2)
+    
+    ax.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='-', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
+    ax.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='-', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
+    # ax.plot(avg_log_n1[mask1], avg_gradient1[mask1], color='blue',zorder=2)
+    # ax.plot(avg_log_n2[mask2], avg_gradient2[mask2], color='orange',zorder=2)
 
     
 
-    plt.axhline(1,linestyle='dashed',color='k')
-    plt.axhline(0.5,linestyle='dashed',color='k')
-    plt.axhline(1.5,linestyle='dashed',color='k')
-    plt.xlabel('logged size of integral slices')
-    plt.ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
-    plt.title(f'Average Scaling Pattern for {type1} and {type2}')
-    plt.legend()
-    plt.grid(zorder=0)
-    plt.tight_layout()
+    ax.axhline(1,linestyle='dashed',color='k')
+    ax.axhline(0.5,linestyle='dashed',color='k')
+    ax.axhline(1.5,linestyle='dashed',color='k')
+    ax.set_xlabel('logged size of integral slices')
+    ax.set_ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
+    ax.set_title(f'Average Scaling Pattern for {type1} and {type2}')
+    ax.legend()
+    ax.grid(zorder=0)
     plt.show()
-    plt.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type1}-{type2}-average.png')
+    fig.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type1}-{type2}-average.png')
     plt.close()
     return avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
 
@@ -870,7 +923,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,10):
+    for i in range(2,50):
         print(i)
         if i==42 or i==24:
             continue
@@ -899,8 +952,7 @@ def main():
         scaling_patterns_ECG.loc[i]=[m,log_n]
         
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
-    print(scaling_patterns_ECG)
-    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG')
+    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',DFA_plot_on)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
     databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
