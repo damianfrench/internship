@@ -13,6 +13,8 @@ import csv
 import sqlite3
 import sys
 from scipy.interpolate import UnivariateSpline
+import traceback
+from collections import namedtuple
 
 sys.path.append('/data/t/smartWatch/patients/completeData')
 from patient_analysis3 import patient_output
@@ -445,7 +447,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
     return df
 
 
-def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
+def plotting(data,number,Flags=None,p=True):
     """
     Generates and saves various heart rate analysis plots and statistics for a given patient.
 
@@ -465,18 +467,16 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
         - 'value': heart rate readings (either stringified arrays or numerical values)
     number : int or str
         Patient identifier used to create output directory and file names.
-    p : any
-        Patient-specific identifier or object, passed to `active_days_calc`.
-    months_on : bool, optional
-        If True, compute and plot monthly average heart rate. Default is True.
-    weeks_on : bool, optional
-        If True, compute and plot weekly average heart rate. Default is True.
-    active_on : bool, optional
-        If True, compute and plot HR on days with recorded activity. Default is True.
-    total_on : bool, optional
-        If True, generate a full-study HR plot and calculate HRV. Default is True.
-    day_and_night_on : bool, optional
-        If True, analyze HR during night-time vs. daytime and estimate resting HR. Default is True.
+    Flags : Dataclass instance containing boolean flags that control which plots are generated:
+            - Flags.months: Plot average heart rate per month.
+            - Flags.weeks: Plot average heart rate per week.
+            - Flags.active: Plot active-day heart rate patterns.
+            - Flags.total: Plot overall average HR trends.
+            - Flags.day_and_night: Plot day/night averages and min/max HR.
+
+    p : bool
+        patient or volunteer identifier passed to active_days_calc.
+
 
     Returns
     -------
@@ -501,15 +501,15 @@ def plotting(data,number,p,months_on=True,weeks_on=True,active_on=True,total_on=
 
     months=data['start'].dt.strftime('%b %Y').unique() # finds the unique months in the data
     avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,np.nan,None,None
-    if months_on:
+    if Flags.months:
         avg_hr_months=months_calc(data,number)
-    if weeks_on:
+    if Flags.weeks:
         weeks,avg_week_hr=week_calc(data,number)
-    if active_on:
+    if Flags.activities:
         avg_hr_active_day,activities=active_days_calc(data,number,p)
-    if total_on:
+    if Flags.total:
         time_y=total_timespan(data,number)
-    if day_and_night_on :
+    if Flags.day_night :
         avg_night,df=days_and_nights(data,number)   
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
@@ -670,10 +670,6 @@ def DFA_analysis(RR,patientNum,data_type,plot=True):
         m (np.ndarray): Continuous slope estimates (from alpha-beta filter)
         logn (np.ndarray): Corresponding log(n) values
     """
-    if type(RR)!=np.ndarray:
-        return (np.nan, np.nan, np.nan), np.array([]), np.array([])
-    if len(RR)<1000:
-        return (np.nan, np.nan, np.nan), np.array([]), np.array([])
     
     F_s,window_sizes=DFA(RR) # performs DFA on the data
     log_n=np.log10(window_sizes)
@@ -693,7 +689,7 @@ def DFA_analysis(RR,patientNum,data_type,plot=True):
     return H_hat,m,logn
 
 
-def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,total_on=True,day_and_night_on=True):
+def databasing(metrics,Flags=None):
     """
     Creates and populates a SQLite database with various patient or volunteer heart rate metrics.
 
@@ -732,7 +728,7 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
         - Relationships are defined via the 'Number' column as a key between tables.
 
     """
-    db_name = 'patient_metrics.db' if patient else 'volunteer_metrics.db'
+    db_name = 'patient_metrics.db' if Flags.patient_analysis else 'volunteer_metrics.db'
     con = sqlite3.connect(db_name)
     cur = con.cursor()
     cur.execute("DROP TABLE IF EXISTS Months")
@@ -743,25 +739,25 @@ def databasing(metrics,patient=True,months_on=True,weeks_on=True,active_on=True,
 
     patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
 
-    if months_on:
+    if Flags.months:
         months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y')) #unique months in the metrics dictionary
         creating_or_updating_tables(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
 
-    if weeks_on:
+    if Flags.weeks:
         weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
         creating_or_updating_tables(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
-    if active_on:
+    if Flags.activities:
         activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
         creating_or_updating_tables(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
     
-    if total_on:
+    if Flags.total:
         
     
         cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
         for i in range(len(patient_num)):
             cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_night'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
         
-    if day_and_night_on:
+    if Flags.day_night:
         # creates a table to store the rest of the patient data
         cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
         for i in range(len(patient_num)):
@@ -916,17 +912,17 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     
     
 
+    metrics['Patient_num'].append(patientNum)
+    metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
+    metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
+    metrics['avg_hr_night'].append(RR['avg_hr_night'])
+    metrics['avg_hr_overall'].append(RR['average_hr'])
+    metrics['avg_hr_active'].append(RR['avg_active_hr'])
+    metrics['months'].append(RR['months'])
+    metrics['weeks'].append(RR['weeks'])
+    metrics['activities'].append(RR['active_days'])
+    df=RR['resting_plus_more']
     try:
-        metrics['Patient_num'].append(patientNum)
-        metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
-        metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
-        metrics['avg_hr_night'].append(RR['avg_hr_night'])
-        metrics['avg_hr_overall'].append(RR['average_hr'])
-        metrics['avg_hr_active'].append(RR['avg_active_hr'])
-        metrics['months'].append(RR['months'])
-        metrics['weeks'].append(RR['weeks'])
-        metrics['activities'].append(RR['active_days'])
-        df=RR['resting_plus_more']
         metrics['days'].append(df['date'].to_numpy())
         metrics['day_avg'].append(df['avg_day'].to_numpy())
         metrics['night_avg'].append(df['avg_night'].to_numpy())
@@ -935,19 +931,18 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
         metrics['day_max'].append(df['max_day'].to_numpy())
         metrics['night_max'].append(df['max_night'].to_numpy())
         metrics['resting_hr'].append(df['resting_hr'].to_numpy())
-        metrics['scaling_exponent_noise'].append(H_hat[0])
-        metrics['scaling_exponent_linear'].append(H_hat[1])
-        metrics['crossover_PPG'].append(H_hat[2])
-
     except:
-        print('Missing PPG data')
+        pass
+    metrics['scaling_exponent_noise'].append(H_hat[0])
+    metrics['scaling_exponent_linear'].append(H_hat[1])
+    metrics['crossover_PPG'].append(H_hat[2])
 
-    try:
-        metrics['ECG_scaling_exponent_noise'].append(H_hat_ECG[0])
-        metrics['ECG_scaling_exponent_linear'].append(H_hat_ECG[1])
-        metrics['crossover_ECG'].append(H_hat_ECG[2])
-    except:
-        print('Missing ECG data')
+
+
+    metrics['ECG_scaling_exponent_noise'].append(H_hat_ECG[0])
+    metrics['ECG_scaling_exponent_linear'].append(H_hat_ECG[1])
+    metrics['crossover_ECG'].append(H_hat_ECG[2])
+
 
     return metrics
 
@@ -1176,9 +1171,12 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on,DFA_plot_on=False,False,False,False,False,True
-    if DFA_plot_on:
-        total_on=True
+    flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
+    Flags=flags(False,False,False,False,False,True,True)
+    if Flags.plot_DFA:
+        iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
+        Flags=flags._make(iterable)
+    
     
     
     # dictionary storing all patient data calcualted in the code to be outputted to db
@@ -1222,24 +1220,36 @@ def main():
             patientNum='{}'.format(str(i))
         
         #patientNum='data_AMC_1633769065'
-        patient_analysis=True
+
 
         try:
-            ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
+            ECG_RR,ECG_R_times=patient_output(patientNum,patient=Flags.patient_analysis)
             ECG_RR=ECG_HRV(ECG_RR,patientNum)
-            H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=DFA_plot_on)
-            scaling_patterns_ECG.loc[i]=[m,log_n]
-        except:
-            print('there is no ECG data for this patient')
-            H_hat_ECG,scaling_patterns_ECG=None,None
+            if ECG_RR is None or len(ECG_RR)<1000:
+                print('not enough ECG data to perform DFA analysis')
+                scaling_patterns_ECG.loc[i]=[[],[]]
+                H_hat_ECG=(np.nan,np.nan,np.nan)
+            else:
+                H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=Flags.plot_DFA)
+                scaling_patterns_ECG.loc[i]=[m,log_n]
+        except Exception as e:
+            print(f"ECG error for patient {patientNum}: {e}")
+            #traceback.print_exc()
+            continue
         try:
-            heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
-            RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
-            H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',plot=DFA_plot_on)
-            scaling_patterns_PPG.loc[i]=[m,log_n]
-        except:
-            print('no PPG data for this patient ')
-            RR,H_hat,scaling_patterns_PPG=None,None,None
+            heartRateDataByMonth=sortingHeartRate(patientNum,patient=Flags.patient_analysis)
+            RR=plotting(heartRateDataByMonth,patientNum,Flags,p=Flags.patient_analysis)
+            if RR['HRV'] is None or len(RR['HRV'])<1000:
+                print('not enough PPG data to perform DFA analysis')
+                scaling_patterns_PPG.loc[i]=[[],[]]
+                H_hat=(np.nan,np.nan,np.nan)
+            else:
+                H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',plot=Flags.plot_DFA)
+                scaling_patterns_PPG.loc[i]=[m,log_n]
+        except Exception as e:
+            print(f"PPG error for patient {patientNum}: {e}")
+            #traceback.print_exc()
+            continue
         
         #surrogate_data=surrogate(RR[0])
 
@@ -1249,10 +1259,10 @@ def main():
         
         
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
-    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',DFA_plot_on)
+    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    databasing(metrics,patient=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
+    databasing(metrics,Flags)
     
 
 if __name__=="__main__":
