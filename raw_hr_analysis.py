@@ -102,7 +102,7 @@ def months_calc(data,number):
     Calculate and plot average heart rate for each unique month in the dataset.
 
     This function groups heart rate data by the month extracted from the 'start' datetime column,
-    plots the heart rate values over time for each month, saves each plot to disk, and computes
+    plots the heart rate values over time for each month, saves each plot, and computes
     the average heart rate for each month.
 
     Parameters
@@ -143,7 +143,7 @@ def months_calc(data,number):
         ax.legend()
         plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
-        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
+        fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
         plt.close()
         avg_hr_per_month.append(np.average(month_y)) # averages the hr for that month
     
@@ -198,7 +198,7 @@ def week_calc(data,number):
         ax.legend()
         plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
-        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
+        fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
     
     return data['start'].dt.strftime('%G-W%V').unique(),avg_hr_weekly
@@ -262,7 +262,7 @@ def active_days_calc(data,number,patient):
         ax.tick_params(axis='x',labelrotation=90,length=0.1)
         ax.legend()
         plt.show()
-        plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day))
+        fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day))
         plt.close()
     return avg_hr_active_days,active_dates
 
@@ -305,7 +305,7 @@ def total_timespan(data,number):
     ax.tick_params(axis='x',labelrotation=90,length=0.1)
     ax.legend()
     plt.show()
-    plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
+    fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
     plt.close()
     return time_y.to_numpy(dtype=np.float64)
 
@@ -348,7 +348,7 @@ def days_and_nights(data,number):
     ax.tick_params(axis='x',labelrotation=90,length=0.1)
     ax.legend()
     plt.show()
-    plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
+    fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
     df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y)
 
@@ -656,11 +656,24 @@ def creating_or_updating_tables(con,table_name,columns,patient_num,value_matrix,
                 cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(value_matrix[i][j],patient_num[i])) # updates the subsequent values in the table
 
 def DFA_analysis(RR,patientNum,data_type,plot=True):
-    """ Performs Detrended Fluctuation Analysis (DFA) on the RR intervals and returns scaling exponents."""
+    """
+    Performs DFA analysis with crossover detection on RR intervals.
+
+    Parameters:
+        RR (np.ndarray): RR interval time series.
+        patientNum (str or int): Identifier for patient/subject.
+        data_type (str): Label used for file naming and plot titles.
+        plot (bool): Whether to generate and save the plot.
+
+    Returns:
+        H_hat (tuple): (short-term exponent, long-term exponent, crossover point)
+        m (np.ndarray): Continuous slope estimates (from alpha-beta filter)
+        logn (np.ndarray): Corresponding log(n) values
+    """
     if type(RR)!=np.ndarray:
-        return (np.nan,np.nan,np.nan),[],[]
+        return (np.nan, np.nan, np.nan), np.array([]), np.array([])
     if len(RR)<1000:
-        return (np.nan,np.nan,np.nan),[],[]
+        return (np.nan, np.nan, np.nan), np.array([]), np.array([])
     
     F_s,window_sizes=DFA(RR) # performs DFA on the data
     log_n=np.log10(window_sizes)
@@ -1041,33 +1054,47 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type):
     return m,interpolated[0]
 
 def ECG_HRV(ECG_RR,patientNum):
+    """
+    Processes and visualizes ECG-based RR interval data, before and after outlier removal.
+
+    Parameters:
+        ECG_RR (np.ndarray): 2D array of RR intervals from ECG data.
+        patientNum (str or int): Identifier for the patient (used for file saving path).
+
+    Returns:
+        np.ndarray: Cleaned, flattened RR interval array.
+    """
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
-    fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constricted')
-    ax[0].plot(np.arange(0,len(ECG_RR)+1),ECG_RR)
+    fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constrained')
+    ax[0].plot(np.arange(0,len(ECG_RR)),ECG_RR)
     ax[0].set_title('ECG HRV')
     ax[0].set_ylabel('RR interval (s)')
     ax[0].set_xlabel('Beats')
     mask=detecting_outliers(ECG_RR)
     ECG_RR=ECG_RR[mask] # removes outliers
     
-    ax[1].plot(np.arange(0,len(ECG_RR+1)),ECG_RR)
-    ax[1].title('ECG HRV Filtered')
-    ax[1].ylabel('RR interval (s)')
-    ax[1].xlabel('Beats')
-    fig.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV".format(patientNum))
+    ax[1].plot(np.arange(0,len(ECG_RR)),ECG_RR)
+    ax[1].set_title('ECG HRV Filtered')
+    ax[1].set_ylabel('RR interval (s)')
+    ax[1].set_xlabel('Beats')
+    fig.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV.png".format(patientNum))
     plt.close()
     return ECG_RR # returns the RR intervals for the ECG data
 
-def avg_scaling_pattern(scaling_patterns,type):
+def avg_scaling_pattern(scaling_patterns):
     """
-    Computes the average scaling pattern from a DataFrame of scaling patterns.
+    Computes the average and standard deviation of scaling gradients and log window sizes
+    across multiple patients or time series.
 
     Parameters:
-        scaling_patterns (DataFrame): DataFrame containing 'gradient' and 'log_n' columns.
+        scaling_patterns (DataFrame): A DataFrame with columns 'gradient' and 'log_n',
+                                      where each row contains lists of values for a subject.
 
     Returns:
-        tuple: Average gradient and log_n values.
+        avg_gradient (np.ndarray): Mean gradient values across subjects
+        avg_log_n (np.ndarray): Mean log(window size) values across subjects
+        std (np.ndarray): Standard deviation of gradient values
     """
     gradient= scaling_patterns['gradient']
     valid_gradient=gradient[gradient.apply(lambda x: len(x) > 0)]
@@ -1076,7 +1103,7 @@ def avg_scaling_pattern(scaling_patterns,type):
     valid_log_n=log_n[log_n.apply(lambda x: len(x) > 0)]  # Filter out empty lists
     avg_log_n=np.mean(np.array(valid_log_n.tolist()),axis=0)
 
-    std=np.std(np.array(valid_log_n.tolist()),axis=0)
+    std=np.std(np.array(valid_gradient.tolist()),axis=0)
 
 
     return avg_gradient, avg_log_n, std
@@ -1090,12 +1117,12 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
         patientNum (str): Patient number for labeling the plot.
         type (str): Type of data (e.g., 'PPG', 'ECG') for labeling the plot.
 
-    Returns:
+    Returns: 
         None
     """
     
-    avg_gradient1, avg_log_n1, std1 = avg_scaling_pattern(scaling_patterns1,type1)
-    avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2,type2)
+    avg_gradient1, avg_log_n1, std1 = avg_scaling_pattern(scaling_patterns1)
+    avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2)
     if plot_on==False:
         avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
     print('avg_grad_1',avg_gradient1)
@@ -1117,14 +1144,10 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     else:
         print('3')
         ax.set_ylim(0,2)
-    # print('Average Gradient:', avg_gradient[mask])
-    # print('Average Log n:', avg_log_n[mask])
+
     
     ax.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='-', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
     ax.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='-', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
-    # ax.plot(avg_log_n1[mask1], avg_gradient1[mask1], color='blue',zorder=2)
-    # ax.plot(avg_log_n2[mask2], avg_gradient2[mask2], color='orange',zorder=2)
-
     
 
     ax.axhline(1,linestyle='dashed',color='k')
@@ -1144,7 +1167,11 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    months_on,weeks_on,active_on,total_on,day_and_night_on,DFA_plot_on=True,True,True,True,True,True
+    months_on,weeks_on,active_on,total_on,day_and_night_on,DFA_plot_on=False,False,False,False,False,True
+    if DFA_plot_on:
+        total_on=True
+    
+    
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
@@ -1176,7 +1203,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if i==42 or i==24:
             continue
