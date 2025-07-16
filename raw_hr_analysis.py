@@ -913,23 +913,20 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
         - This function assumes the `metrics` dictionary already contains all necessary keys with list values.
     """
 
-    metrics['Patient_num'].append(patientNum)
-    metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
-    metrics['avg_hr_night'].append(RR['avg_hr_night'])
-    metrics['avg_hr_overall'].append(RR['average_hr'])
-    metrics['avg_hr_active'].append(RR['avg_active_hr'])
-    metrics['scaling_exponent_noise'].append(H_hat[0])
-    metrics['scaling_exponent_linear'].append(H_hat[1])
-    metrics['ECG_scaling_exponent_noise'].append(H_hat_ECG[0])
-    metrics['ECG_scaling_exponent_linear'].append(H_hat_ECG[1])
-    metrics['crossover_PPG'].append(H_hat[2])
-    metrics['crossover_ECG'].append(H_hat_ECG[2])
-    metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
-    metrics['months'].append(RR['months'])
-    metrics['weeks'].append(RR['weeks'])
-    metrics['activities'].append(RR['active_days'])
-    df=RR['resting_plus_more']
+    
+    
+
     try:
+        metrics['Patient_num'].append(patientNum)
+        metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
+        metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
+        metrics['avg_hr_night'].append(RR['avg_hr_night'])
+        metrics['avg_hr_overall'].append(RR['average_hr'])
+        metrics['avg_hr_active'].append(RR['avg_active_hr'])
+        metrics['months'].append(RR['months'])
+        metrics['weeks'].append(RR['weeks'])
+        metrics['activities'].append(RR['active_days'])
+        df=RR['resting_plus_more']
         metrics['days'].append(df['date'].to_numpy())
         metrics['day_avg'].append(df['avg_day'].to_numpy())
         metrics['night_avg'].append(df['avg_night'].to_numpy())
@@ -938,8 +935,20 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
         metrics['day_max'].append(df['max_day'].to_numpy())
         metrics['night_max'].append(df['max_night'].to_numpy())
         metrics['resting_hr'].append(df['resting_hr'].to_numpy())
+        metrics['scaling_exponent_noise'].append(H_hat[0])
+        metrics['scaling_exponent_linear'].append(H_hat[1])
+        metrics['crossover_PPG'].append(H_hat[2])
+
     except:
-        pass
+        print('Missing PPG data')
+
+    try:
+        metrics['ECG_scaling_exponent_noise'].append(H_hat_ECG[0])
+        metrics['ECG_scaling_exponent_linear'].append(H_hat_ECG[1])
+        metrics['crossover_ECG'].append(H_hat_ECG[2])
+    except:
+        print('Missing ECG data')
+
     return metrics
 
 def alpha_beta_filter(x,y,Q=500):
@@ -1203,7 +1212,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    for i in range(2,10):
+    for i in range(2,50):
         print(i)
         if i==42 or i==24:
             continue
@@ -1217,19 +1226,27 @@ def main():
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=patient_analysis)
+            ECG_RR=ECG_HRV(ECG_RR,patientNum)
+            H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=DFA_plot_on)
+            scaling_patterns_ECG.loc[i]=[m,log_n]
+        except:
+            print('there is no ECG data for this patient')
+            H_hat_ECG,scaling_patterns_ECG=None,None
+        try:
             heartRateDataByMonth=sortingHeartRate(patientNum,patient=patient_analysis)
             RR=plotting(heartRateDataByMonth,patientNum,p=patient_analysis,months_on=months_on,weeks_on=weeks_on,active_on=active_on,total_on=total_on,day_and_night_on=day_and_night_on)
+            H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',plot=DFA_plot_on)
+            scaling_patterns_PPG.loc[i]=[m,log_n]
         except:
-            continue
-        ECG_RR=ECG_HRV(ECG_RR,patientNum)
+            print('no PPG data for this patient ')
+            RR,H_hat,scaling_patterns_PPG=None,None,None
+        
         #surrogate_data=surrogate(RR[0])
 
-        H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',plot=DFA_plot_on)
-        scaling_patterns_PPG.loc[i]=[m,log_n]
+        
         
 
-        H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=DFA_plot_on)
-        scaling_patterns_ECG.loc[i]=[m,log_n]
+        
         
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',DFA_plot_on)
