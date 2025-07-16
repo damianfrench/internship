@@ -1082,6 +1082,7 @@ def ECG_HRV(ECG_RR,patientNum):
     ax[1].set_title('ECG HRV Filtered')
     ax[1].set_ylabel('RR interval (s)')
     ax[1].set_xlabel('Beats')
+    Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(patientNum)).mkdir(exist_ok=True) # creating new directory
     fig.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV.png".format(patientNum))
     plt.close()
     return ECG_RR # returns the RR intervals for the ECG data
@@ -1112,7 +1113,7 @@ def avg_scaling_pattern(scaling_patterns):
 
     return avg_gradient, avg_log_n, std
 
-def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,plot_on=True):
+def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,patient=True,DFA_on=True):
     """
     Plots the average scaling pattern from a DataFrame of scaling patterns.
 
@@ -1124,10 +1125,11 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     Returns: 
         None
     """
+        
     
     avg_gradient1, avg_log_n1, std1 = avg_scaling_pattern(scaling_patterns1)
     avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2)
-    if plot_on==False:
+    if DFA_on==False:
         avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
     print('avg_grad_1',avg_gradient1)
     print('avg_grad_1',avg_gradient2)
@@ -1163,7 +1165,7 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     ax.legend()
     ax.grid(zorder=0)
     plt.show()
-    fig.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{type1}-{type2}-average.png')
+    fig.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png')
     plt.close()
     return avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
 
@@ -1210,16 +1212,20 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
+    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567']
     for i in range(2,50):
         print(i)
-        if i==42 or i==24:
-            continue
-        if i<10:
-            patientNum='0{}'.format(str(i))
+        if Flags.patient_analysis:
+            if i==42 or i==24:
+                continue
+            if i<10:
+                patientNum='0{}'.format(str(i))
+            else:
+                patientNum='{}'.format(str(i))
+        elif i-2<len(volunteer_nums):
+            patientNum=volunteer_nums[i-2]
         else:
-            patientNum='{}'.format(str(i))
-        
-        #patientNum='data_AMC_1633769065'
+            break
 
 
         try:
@@ -1259,7 +1265,7 @@ def main():
         
         
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
-    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.plot_DFA)
+    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
     databasing(metrics,Flags)
