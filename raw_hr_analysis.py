@@ -1041,6 +1041,7 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type):
     m,log_f=alpha_beta_filter(*interpolated)
     if ax is None:
         return m,interpolated[0]
+    print(np.max(m))
     if np.max(m)>2:
         ax.set_ylim(0,np.max(m)+0.5)
     else:
@@ -1174,7 +1175,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(False,False,False,False,False,True,True)
+    Flags=flags(True,True,True,True,True,True,False)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
@@ -1212,7 +1213,7 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567']
+    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
     for i in range(2,50):
         print(i)
         if Flags.patient_analysis:
@@ -1231,7 +1232,8 @@ def main():
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=Flags.patient_analysis)
             ECG_RR=ECG_HRV(ECG_RR,patientNum)
-            if ECG_RR is None or len(ECG_RR)<1000:
+            print(volunteer_nums[i-2],len(ECG_RR))
+            if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
                 scaling_patterns_ECG.loc[i]=[[],[]]
                 H_hat_ECG=(np.nan,np.nan,np.nan)

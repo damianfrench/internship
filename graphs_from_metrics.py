@@ -1,3 +1,5 @@
+#%%
+
 import numpy as np
 import matplotlib.pyplot as plt
 import sqlite3
@@ -471,8 +473,8 @@ def crossover(cur):
     
     plt.ylabel('crossover point')
     plt.title('crossover points on DFA graph for patients')
-    plt.scatter(x_axis,df_patients[:,7].astype(np.float64),color='blue',label='PPT patient crossovers')
-    plt.scatter(x_axis,df_patients[:,8].astype(np.float64),color='orange',label='PPT patient crossovers')
+    plt.scatter(x_axis,df_patients[:,7].astype(np.float64),color='blue',label='PPG patient crossovers')
+    plt.scatter(x_axis,df_patients[:,8].astype(np.float64),color='orange',label='ECG patient crossovers')
     plt.axhline(np.mean(df_patients[:,8].astype(np.float64)),color='orange',label='average ECG patient crossover')
     plt.legend()
     #plt.scatter(x_axis,df[:,8].astype(np.float64))
@@ -562,12 +564,15 @@ def main():
     #week_analysis(cur,Group_masks,nan_mask,4)
     #night_analysis(cur)
     #DayVsNight_analysis(cur)
-    #crossover(cur)
-    resting_hr(cur)
-
+    crossover(cur)
+    #resting_hr(cur)
 
 
 
 
 if __name__=="__main__":
     main()  
+
+#%%
+
+
