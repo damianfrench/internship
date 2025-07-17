@@ -369,14 +369,13 @@ def days_and_nights(data,number,patient):
     plt.show()
     fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
-    df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y)
-    df['min_night']=sleep_data["Heart rate (min)"]
-    df['max_night']=sleep_data["Heart rate (max)"]
-    df['night_avg']=sleep_data["Average heart rate"]
+    day_df,night_df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y,sleep_data)
+  
 
-    return df
+    print(night_df)
+    return day_df,night_df
 
-def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
+def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep_data):
     """
     Calculate daily statistics for day and night heart rate, including an estimate of resting heart rate.
 
@@ -406,7 +405,8 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
         - 'avg_night', 'min_night', 'max_night'
         - 'resting_hr' : minimum 5-point rolling average during night-time
     """
-    results=[]
+    day_results=[]
+    night_results=[]
 
     days=np.unique(time_index.normalize()) # normalises the time index to remove the time component
 
@@ -435,17 +435,34 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
             
         else:
             resting_hr_val = np.nan
-        results.append({
+        day_results.append({
         'date': date_str,
         'avg_day': avg_day,
         'min_day': min_day,
         'max_day': max_day,
         'resting_hr': resting_hr_val
     })
+    
+    nights=sleep_data['from'].dt.normalize()
+    for i, night in enumerate(nights):
+        date=night.strftime('%Y-%m-%d')
+        night_mask=sleep_data['from'].dt.normalize()==night
+        night_avg=sleep_data["Average heart rate"].to_numpy()[night_mask][0]
+        night_min=sleep_data["Heart rate (min)"].to_numpy()[night_mask][0]
+        night_max=sleep_data["Heart rate (max)"].to_numpy()[night_mask][0]
+        night_results.append({'date':date,
+                              'avg_night':night_avg,
+                              'min_night':night_min,
+                            'max_night':night_max})
+        
 
-    df = pd.DataFrame(results)
+    
+    day_df = pd.DataFrame(day_results)
+    night_df=pd.DataFrame(night_results)
 
-    return df
+
+
+    return day_df,night_df
 
 
 def plotting(data,number,Flags=None,p=True):
