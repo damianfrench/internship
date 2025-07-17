@@ -84,6 +84,16 @@ def sortingActivityData(number,
     activities['to']=pd.to_datetime(activities['to'], format='ISO8601',utc=True)
     return activities['from'],activities['to']
 
+def reading_sleep_Data(number, patient=True):
+    if patient:
+        sleep_data=(pd.read_csv(f'/data/t/smartWatch/patients/completeData/patData/record{number}/sleep.csv',header=0))
+    else:
+        sleep_data=(pd.read_csv(f'/data/t/smartWatch/patients/volunteerData/{number}/sleep.csv',header=0))
+    
+    sleep_data['from']=pd.to_datetime(sleep_data['from'],format='ISO8601',utc=True)
+    sleep_data['to']=pd.to_datetime(sleep_data['to'],format='ISO8601',utc=True)
+    return sleep_data
+
 def split_on_plus(data):
     return np.vstack(np.char.split(data,'+'))
 
@@ -129,9 +139,9 @@ def months_calc(data,number):
     """
     avg_hr_per_month=[] # list to store the average heart rate for each month
     # finds the unique months in the data and returns them
-    months=data['start'].dt.month.unique() # finds the unique months in the data
+    months=data['start'].dt.strftime('%b %Y').unique() # finds the unique months in the data
     for m in months:
-        mask=data['start'].dt.month==m # creates a mask for the current month
+        mask=data['start'].dt.strftime('%b %Y')==m # creates a mask for the current month
         month_data=data[mask]
         month_x=month_data['start']
         month_y = month_data['value']
@@ -150,7 +160,7 @@ def months_calc(data,number):
         avg_hr_per_month.append(np.average(month_y)) # averages the hr for that month
     
 
-    return avg_hr_per_month
+    return months,avg_hr_per_month
 
 def week_calc(data,number):
     """
@@ -183,9 +193,9 @@ def week_calc(data,number):
       based on the given `number`.
     """
     avg_hr_weekly=[]
-    weeks=np.unique(data['start'].dt.isocalendar().week) # finds the unique weeks in the data
+    weeks=data['start'].dt.strftime('%G-W%V').unique() # finds the unique weeks in the data
     for w in weeks:
-        mask=(data['start'].dt.isocalendar().week==w).to_numpy() # creates a mask for the current week
+        mask=(data['start'].dt.strftime('%G-W%V')==w).to_numpy() # creates a mask for the current week
         week_data=data[mask]
         week_x=week_data['start']
         week_y = week_data['value']
@@ -203,7 +213,7 @@ def week_calc(data,number):
         fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
         plt.close()
     
-    return data['start'].dt.strftime('%G-W%V').unique(),avg_hr_weekly
+    return weeks,avg_hr_weekly
 
 def active_days_calc(data,number,patient):
     """
@@ -311,7 +321,7 @@ def total_timespan(data,number):
     plt.close()
     return time_y.to_numpy(dtype=np.float64)
 
-def days_and_nights(data,number):
+def days_and_nights(data,number,patient):
     """
     Analyze and plot night-time heart rate data, then calculate daily heart rate statistics.
 
@@ -333,7 +343,13 @@ def days_and_nights(data,number):
         - float : The average heart rate during night-time.
         - pandas.DataFrame : A DataFrame with daily heart rate statistics and estimated resting HR, returned from `resting_max_and_min`.
     """
-    night_mask=(data['start'].dt.hour>=20) | (data['start'].dt.hour<6) # creates a mask for the night time data
+    try:
+        sleep_data=reading_sleep_Data(number,patient)
+    except:
+        print(f'patient number {number} doesnt have any sleep data')
+    average_bedtime=sleep_data['from'].average()
+    average_wakeup=sleep_data['to'].average()
+    night_mask=(data['start'].dt.hour>=average_bedtime) | (data['start'].dt.hour<average_wakeup) # creates a mask for the night time data
     day_mask=(data['start'].dt.hour<20) | (data['start'].dt.hour>=6) # creates a mask for the day time data
     night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
     day_data= data[day_mask] # generates the other data for comparison
@@ -499,10 +515,9 @@ def plotting(data,number,Flags=None,p=True):
             np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
 
-    months=data['start'].dt.strftime('%b %Y').unique() # finds the unique months in the data
     avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,np.nan,None,None
     if Flags.months:
-        avg_hr_months=months_calc(data,number)
+        months,avg_hr_months=months_calc(data,number)
     if Flags.weeks:
         weeks,avg_week_hr=week_calc(data,number)
     if Flags.activities:
@@ -510,7 +525,7 @@ def plotting(data,number,Flags=None,p=True):
     if Flags.total:
         time_y=total_timespan(data,number)
     if Flags.day_night :
-        avg_night,df=days_and_nights(data,number)   
+        avg_night,df=days_and_nights(data,number,p)
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "avg_hr_night":avg_night,
@@ -648,7 +663,9 @@ def creating_or_updating_tables(con,table_name,columns,patient_num,value_matrix,
     adding_columns_command=";".join([f"ALTER TABLE {table_name} ADD COLUMN '{col}' TEXT" for col in columns]) # creates a command to add the columns to the table
     cur.executescript(adding_columns_command) # executes the command to add the columns
 
+
     for i,row in enumerate(column_matrix):
+         
         for j,key in enumerate(row):
             try:
                 cur.execute(f"INSERT INTO {table_name}('Number','{key}') VALUES(?,?)",(patient_num[i],value_matrix[i][j])) # inserts the first values into the table
@@ -1041,9 +1058,8 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type):
     m,log_f=alpha_beta_filter(*interpolated)
     if ax is None:
         return m,interpolated[0]
-    print(np.max(m))
-    if np.max(m)>2:
-        ax.set_ylim(0,np.max(m)+0.5)
+    if np.max(m[mask])>2:
+        ax.set_ylim(0,np.max(m[mask])+0.5)
     else:
         ax.set_ylim(0,2)
     ax.plot(interpolated[0][mask],m[mask])
