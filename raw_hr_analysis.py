@@ -347,10 +347,11 @@ def days_and_nights(data,number,patient):
         sleep_data=reading_sleep_Data(number,patient)
     except:
         print(f'patient number {number} doesnt have any sleep data')
-    average_bedtime=sleep_data['from'].average()
-    average_wakeup=sleep_data['to'].average()
+    average_bedtime=np.mean(sleep_data['from'].dt.hour.to_numpy())
+    average_wakeup=np.mean(sleep_data['to'].dt.hour.to_numpy())
+    print(average_bedtime)
     night_mask=(data['start'].dt.hour>=average_bedtime) | (data['start'].dt.hour<average_wakeup) # creates a mask for the night time data
-    day_mask=(data['start'].dt.hour<20) | (data['start'].dt.hour>=6) # creates a mask for the day time data
+    day_mask=(data['start'].dt.hour<average_bedtime) | (data['start'].dt.hour>=average_wakeup) # creates a mask for the day time data
     night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
     day_data= data[day_mask] # generates the other data for comparison
     night_y=night_data['value']  # extracts the heart rate values from the data
@@ -369,9 +370,11 @@ def days_and_nights(data,number,patient):
     fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
     plt.close()
     df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y)
+    df['min_night']=sleep_data["Heart rate (min)"]
+    df['max_night']=sleep_data["Heart rate (max)"]
+    df['night_avg']=sleep_data["Average heart rate"]
 
-
-    return np.average(night_y),df
+    return df
 
 def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
     """
@@ -404,16 +407,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
         - 'resting_hr' : minimum 5-point rolling average during night-time
     """
     results=[]
-    resting_hr=pd.DataFrame({'date':[],
-                             'resting_hr':[]})
-    days_df=pd.DataFrame({'date':[],
-                          'avg_day':[],
-                          'min_day':[],
-                          'max_day':[]})
-    nights_df=pd.DataFrame({'date':[],
-                          'avg_night':[],
-                          'min_night':[],
-                          'max_night':[]})
+
     days=np.unique(time_index.normalize()) # normalises the time index to remove the time component
 
     for i,day in enumerate(days):
@@ -431,9 +425,6 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
 
 
         if len(night_vals)>0:
-            avg_night = np.mean(night_vals)
-            min_night = np.min(night_vals) 
-            max_night = np.max(night_vals)
             min_indx=np.argmin(night_vals)
             resting_hr_val=np.inf
             for j in range(len(night_vals)):
@@ -444,17 +435,11 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data):
             
         else:
             resting_hr_val = np.nan
-            avg_night = np.nan
-            min_night = np.nan
-            max_night = np.nan
         results.append({
         'date': date_str,
         'avg_day': avg_day,
         'min_day': min_day,
         'max_day': max_day,
-        'avg_night': avg_night,
-        'min_night': min_night,
-        'max_night': max_night,
         'resting_hr': resting_hr_val
     })
 
@@ -525,10 +510,9 @@ def plotting(data,number,Flags=None,p=True):
     if Flags.total:
         time_y=total_timespan(data,number)
     if Flags.day_night :
-        avg_night,df=days_and_nights(data,number,p)
+        df=days_and_nights(data,number,p)
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
-            "avg_hr_night":avg_night,
             "average_hr":np.average(time_y),
             "months":months,
             "avg_week_hr":avg_week_hr,
@@ -770,9 +754,9 @@ def databasing(metrics,Flags=None):
     if Flags.total:
         
     
-        cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,night_hr_avg FLOAT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
+        cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
         for i in range(len(patient_num)):
-            cur.execute("INSERT INTO Patients(Number,night_hr_avg,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_night'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
+            cur.execute("INSERT INTO Patients(Number,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
         
     if Flags.day_night:
         # creates a table to store the rest of the patient data
@@ -932,7 +916,6 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     metrics['Patient_num'].append(patientNum)
     metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
     metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
-    metrics['avg_hr_night'].append(RR['avg_hr_night'])
     metrics['avg_hr_overall'].append(RR['average_hr'])
     metrics['avg_hr_active'].append(RR['avg_active_hr'])
     metrics['months'].append(RR['months'])
@@ -1201,7 +1184,6 @@ def main():
     # dictionary storing all patient data calcualted in the code to be outputted to db
     metrics={'Patient_num':[],
                 'avg_hr_per_month':[],
-                'avg_hr_night':[],
                 'avg_hr_overall':[],
                 'avg_hr_active':[],
                 'scaling_exponent_noise':[],
