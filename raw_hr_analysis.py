@@ -92,6 +92,13 @@ def reading_sleep_Data(number, patient=True):
     
     sleep_data['from']=pd.to_datetime(sleep_data['from'],format='ISO8601',utc=True)
     sleep_data['to']=pd.to_datetime(sleep_data['to'],format='ISO8601',utc=True)
+
+    sleep_data["Average heart rate"]=np.array([
+            np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
+            for item in sleep_data["Average heart rate"].to_numpy('str')])
+
+
+
     return sleep_data
 
 def split_on_plus(data):
@@ -372,7 +379,6 @@ def days_and_nights(data,number,patient):
     day_df,night_df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y,sleep_data)
   
 
-    print(night_df)
     return day_df,night_df
 
 def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep_data):
@@ -444,12 +450,17 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
     })
     
     nights=sleep_data['from'].dt.normalize()
+
     for i, night in enumerate(nights):
         date=night.strftime('%Y-%m-%d')
-        night_mask=sleep_data['from'].dt.normalize()==night
-        night_avg=sleep_data["Average heart rate"].to_numpy()[night_mask][0]
-        night_min=sleep_data["Heart rate (min)"].to_numpy()[night_mask][0]
-        night_max=sleep_data["Heart rate (max)"].to_numpy()[night_mask][0]
+        filtered=sleep_data.loc[sleep_data['from'].dt.normalize()==night]
+        night_avg=float(filtered["Average heart rate"].iloc[0])
+        night_min=float(filtered["Heart rate (min)"].iloc[0])
+        night_max=float(filtered["Heart rate (max)"].iloc[0])
+        # print('night avg=',night_avg)
+        # print('night min=',night_min)
+        # print('night max=',night_max)
+        print(type(night_min), repr(night_min))
         night_results.append({'date':date,
                               'avg_night':night_avg,
                               'min_night':night_min,
@@ -527,7 +538,7 @@ def plotting(data,number,Flags=None,p=True):
     if Flags.total:
         time_y=total_timespan(data,number)
     if Flags.day_night :
-        df=days_and_nights(data,number,p)
+        day_df,night_df=days_and_nights(data,number,p)
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "average_hr":np.average(time_y),
@@ -536,7 +547,8 @@ def plotting(data,number,Flags=None,p=True):
             "avg_active_hr":avg_hr_active_day,
             "weeks":weeks,
             "active_days":activities,
-            "resting_plus_more":df}
+            "resting_and_days":day_df,
+            "nights":night_df}
 
 def detecting_crossover(log_F,log_n):
     """
@@ -753,7 +765,8 @@ def databasing(metrics,Flags=None):
     cur.execute("DROP TABLE IF EXISTS Weeks")
     cur.execute("DROP TABLE IF EXISTS Active")
     cur.execute("DROP TABLE IF EXISTS Patients")
-    cur.execute("DROP TABLE IF EXISTS DayAndNight")
+    cur.execute("DROP TABLE IF EXISTS Days")
+    cur.execute("DROP TABLE IF EXISTS Nights")
 
     patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
 
@@ -777,11 +790,13 @@ def databasing(metrics,Flags=None):
         
     if Flags.day_night:
         # creates a table to store the rest of the patient data
-        cur.execute("CREATE TABLE DayAndNight(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, night_avg FLOAT, day_min FLOAT, night_min FLOAT, day_max FLOAT, night_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+        cur.execute("CREATE TABLE Days(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, day_min FLOAT, day_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+        cur.execute("CREATE TABLE Nights(ID INTEGER, Number TEXT, date TEXT, night_avg FLOAT, night_min FLOAT, night_max FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
         for i in range(len(patient_num)):
-            for j in range(len(metrics['days'][i])):
-                cur.execute("""INSERT INTO DayAndNight(Number,date,day_avg,night_avg,day_min,night_min,day_max,night_max,resting_hr) VALUES (?,?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['days'][i][j],metrics['day_avg'][i][j],metrics['night_avg'][i][j],metrics['day_min'][i][j],metrics['night_min'][i][j],metrics['day_max'][i][j],metrics['night_max'][i][j],metrics['resting_hr'][i][j]))
-
+            for j in range(len(metrics['day_dates'][i])):
+                cur.execute("""INSERT INTO Days(Number,date,day_avg,day_min,day_max,resting_hr) VALUES (?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['day_dates'][i][j],metrics['day_avg'][i][j],metrics['day_min'][i][j],metrics['day_max'][i][j],metrics['resting_hr'][i][j]))
+            for j in range(len(metrics['night_dates'][i])):
+                cur.execute("""INSERT INTO Nights(Number,date,night_avg,night_min,night_max) VALUES (?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['night_dates'][i][j],metrics['night_avg'][i][j],metrics['night_min'][i][j],metrics['night_max'][i][j]))
     con.commit() # commits and closes the database
     con.close()
 
@@ -938,18 +953,24 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     metrics['months'].append(RR['months'])
     metrics['weeks'].append(RR['weeks'])
     metrics['activities'].append(RR['active_days'])
-    df=RR['resting_plus_more']
+    day_df=RR['resting_and_days']
+    night_df=RR['nights']
     try:
-        metrics['days'].append(df['date'].to_numpy())
-        metrics['day_avg'].append(df['avg_day'].to_numpy())
-        metrics['night_avg'].append(df['avg_night'].to_numpy())
-        metrics['day_min'].append(df['min_day'].to_numpy())
-        metrics['night_min'].append(df['min_night'].to_numpy())
-        metrics['day_max'].append(df['max_day'].to_numpy())
-        metrics['night_max'].append(df['max_night'].to_numpy())
-        metrics['resting_hr'].append(df['resting_hr'].to_numpy())
-    except:
-        pass
+        metrics['day_dates'].append(day_df['date'].to_numpy())
+        metrics['day_avg'].append(day_df['avg_day'].to_numpy())
+        metrics['day_min'].append(day_df['min_day'].to_numpy())
+        metrics['day_max'].append(day_df['max_day'].to_numpy())
+        metrics['resting_hr'].append(day_df['resting_hr'].to_numpy())
+    except Exception as e:
+        print(f"day_data error for patient {patientNum}: {e}")
+    try:
+        metrics['night_dates'].append(night_df['date'].to_numpy())
+        metrics['night_avg'].append(night_df['avg_night'].to_numpy())
+        metrics['night_min'].append(night_df['min_night'].to_numpy())
+        metrics['night_max'].append(night_df['max_night'].to_numpy())
+    except Exception as e:
+        print(f"night_data error for patient {patientNum}: {e}")
+
     metrics['scaling_exponent_noise'].append(H_hat[0])
     metrics['scaling_exponent_linear'].append(H_hat[1])
     metrics['crossover_PPG'].append(H_hat[2])
@@ -1213,7 +1234,8 @@ def main():
                 'months':[],
                 'weeks':[],
                 'activities':[],
-                'days':[],
+                'day_dates':[],
+                'night_dates':[],
                 'day_avg':[],
                 'night_avg':[],
                 'day_min':[],
@@ -1228,7 +1250,9 @@ def main():
     data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
-    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
+    # volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
+    volunteer_nums=['data_001_1636025623']
+
     for i in range(2,50):
         print(i)
         if Flags.patient_analysis:
@@ -1285,6 +1309,7 @@ def main():
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
+    
     databasing(metrics,Flags)
     
 
