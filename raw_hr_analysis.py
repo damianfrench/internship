@@ -21,7 +21,7 @@ from patient_analysis3 import patient_output
 
 
 
-def sortingHeartRate(number,
+def sortingHeartRate(number,data_path,
                      patient=True):
     """
     Loads and sorts heart rate data by timestamp.
@@ -43,15 +43,15 @@ def sortingHeartRate(number,
         - File paths are hardcoded and must match the data directory structure.
     """
     if patient:
-        heartRate=(pd.read_csv(f'/data/t/smartWatch/patients/completeData/patData/record{number}/raw_hr_hr.csv',header=0))
+        heartRate=(pd.read_csv(f'{data_path}/record{number}/raw_hr_hr.csv',header=0))
     else:
-        heartRate=(pd.read_csv(f'/data/t/smartWatch/patients/volunteerData/{number}/raw_hr_hr.csv',header=0))
+        heartRate=(pd.read_csv(f'{data_path}/{number}/raw_hr_hr.csv',header=0))
 
     heartRate['start']=pd.to_datetime(heartRate['start'], format='ISO8601',utc=True) # converts the timestamps to datetime objects
     sortedData=heartRate.sort_values(by='start')
     return sortedData
 
-def sortingActivityData(number,
+def sortingActivityData(number,data_path,
                         patient=True):
     """
     Loads and parses activity data, returning start and end times.
@@ -76,19 +76,21 @@ def sortingActivityData(number,
     """
     #loads activity data into array and returns the start and end times
     if patient:
-        activities=(pd.read_csv(f'/data/t/smartWatch/patients/completeData/patData/record{number}/activities.csv',header=0))
+        activities=(pd.read_csv(f'{data_path}/record{number}/activities.csv',header=0))
     else:
-        activities=(pd.read_csv(f'/data/t/smartWatch/patients/volunteerData/{number}/activities.csv',header=0))
+        activities=(pd.read_csv(f'{data_path}/{number}/activities.csv',header=0))
 
     activities['from']=pd.to_datetime(activities['from'], format='ISO8601',utc=True) # converts the timestamps to datetime objects
     activities['to']=pd.to_datetime(activities['to'], format='ISO8601',utc=True)
     return activities['from'],activities['to']
 
-def reading_sleep_Data(number, patient=True):
+def reading_sleep_Data(number,data_path,patient=True):
+    print(patient)
     if patient:
-        sleep_data=(pd.read_csv(f'/data/t/smartWatch/patients/completeData/patData/record{number}/sleep.csv',header=0))
+        sleep_data=(pd.read_csv(f'{data_path}/record{number}/sleep.csv',header=0))
     else:
-        sleep_data=(pd.read_csv(f'/data/t/smartWatch/patients/volunteerData/{number}/sleep.csv',header=0))
+        sleep_data=(pd.read_csv(f'{data_path}/{number}/sleep.csv',header=0))
+        print(f'{data_path}/{number}/sleep.csv')
     
     sleep_data['from']=pd.to_datetime(sleep_data['from'],format='ISO8601',utc=True)
     sleep_data['to']=pd.to_datetime(sleep_data['to'],format='ISO8601',utc=True)
@@ -116,7 +118,7 @@ def split_on_colon(data):
 def only_yearAndmonth(data):
     return np.vstack(np.array([d[:7] for d in data]))
 
-def months_calc(data,number):
+def months_calc(data,number,saving_path):
     """
     Calculate and plot average heart rate for each unique month in the dataset.
 
@@ -162,14 +164,14 @@ def months_calc(data,number):
         ax.legend()
         plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
-        fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/month-{}'.format(number,m))
+        fig.savefig(f'{saving_path}/heartRateRecord{number}/month-{m}')
         plt.close()
         avg_hr_per_month.append(np.average(month_y)) # averages the hr for that month
     
 
     return months,avg_hr_per_month
 
-def week_calc(data,number):
+def week_calc(data,number,saving_path):
     """
     Calculate and plot average heart rate for each unique ISO week in the dataset.
 
@@ -217,12 +219,12 @@ def week_calc(data,number):
         ax.legend()
         plt.show()
         #Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
-        fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/week-{}'.format(number,w))
+        fig.savefig(f'{saving_path}/heartRateRecord{number}/week-{w}')
         plt.close()
     
     return weeks,avg_hr_weekly
 
-def active_days_calc(data,number,patient):
+def active_days_calc(data,number,patient,data_path,saving_path):
     """
     Calculate and plot average heart rate for each day with recorded activity.
 
@@ -257,7 +259,7 @@ def active_days_calc(data,number,patient):
 
     avg_hr_active_days=[] # list to store the average heart rate for each day with activity
     normalised_time_index=data['start'].dt.normalize() # normalises  to remove the time component
-    start,end= sortingActivityData(number,patient=patient) # brings in activity data
+    start,end= sortingActivityData(number,data_path,patient=patient) # brings in activity data
     start_time_index=pd.DatetimeIndex(start).normalize() # ensures the activity start times are in datetime format
     active_dates= start_time_index.to_series().dt.strftime('%Y-%m-%d').unique() # finds all unique dates activities were done on
     for day in active_dates: # loops through the days activity was done on
@@ -281,11 +283,11 @@ def active_days_calc(data,number,patient):
         ax.tick_params(axis='x',labelrotation=90,length=0.1)
         ax.legend()
         plt.show()
-        fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/{}'.format(number,day))
+        fig.savefig(f'{saving_path}/heartRateRecord{number}/{day}')
         plt.close()
     return avg_hr_active_days,active_dates
 
-def total_timespan(data,number):
+def total_timespan(data,number,saving_path):
     """
     Plots heart rate over the entire timespan of the dataset and return heart rate values as a NumPy array.
 
@@ -324,11 +326,11 @@ def total_timespan(data,number):
     ax.tick_params(axis='x',labelrotation=90,length=0.1)
     ax.legend()
     plt.show()
-    fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/Full'.format(number))
+    fig.savefig(f'{saving_path}/heartRateRecord{number}/Full')
     plt.close()
     return time_y.to_numpy(dtype=np.float64)
 
-def days_and_nights(data,number,patient):
+def days_and_nights(data,number,patient,data_path,saving_path):
     """
     Analyze and plot night-time heart rate data, then calculate daily heart rate statistics.
 
@@ -351,15 +353,18 @@ def days_and_nights(data,number,patient):
         - pandas.DataFrame : A DataFrame with daily heart rate statistics and estimated resting HR, returned from `resting_max_and_min`.
     """
     try:
-        sleep_data=reading_sleep_Data(number,patient)
+        print(patient)
+        sleep_data=reading_sleep_Data(number,data_path,patient)
     except:
         print(f'patient number {number} doesnt have any sleep data')
-    average_bedtime=np.mean(sleep_data['from'].dt.hour.to_numpy())
-    average_wakeup=np.mean(sleep_data['to'].dt.hour.to_numpy())
-    print(average_bedtime)
+        return pd.DataFrame(),pd.DataFrame()
+    print(f"time slept=\n{sleep_data['to']-sleep_data['from']}")
+    average_bedtime=circular_mean(sleep_data,'from','to')
+    average_wakeup=circular_mean(sleep_data,'from','to',first=False)
+    print(f'average wake up ={average_wakeup}\n average bedtime={average_bedtime}')
     night_mask=(data['start'].dt.hour>=average_bedtime) | (data['start'].dt.hour<average_wakeup) # creates a mask for the night time data
     day_mask=(data['start'].dt.hour<average_bedtime) | (data['start'].dt.hour>=average_wakeup) # creates a mask for the day time data
-    night_data=data[night_mask] # generates heart rate data only between 10pm and 6am
+    night_data=data[night_mask] # generates heart rate data for night
     day_data= data[day_mask] # generates the other data for comparison
     night_y=night_data['value']  # extracts the heart rate values from the data
     day_y=day_data['value']  # extracts the heart rate values from the data
@@ -374,7 +379,7 @@ def days_and_nights(data,number,patient):
     ax.tick_params(axis='x',labelrotation=90,length=0.1)
     ax.legend()
     plt.show()
-    fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/FullNight'.format(number))
+    fig.savefig(f'{saving_path}/heartRateRecord{number}/FullNight')
     plt.close()
     day_df,night_df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y,sleep_data)
   
@@ -449,18 +454,18 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         'resting_hr': resting_hr_val
     })
     
-    nights=sleep_data['from'].dt.normalize()
-
+    nights=sleep_data['from'].dt.normalize().unique()
     for i, night in enumerate(nights):
         date=night.strftime('%Y-%m-%d')
         filtered=sleep_data.loc[sleep_data['from'].dt.normalize()==night]
+        # print(f'current night is:{night}, index ={i}')
+        # print(filtered)
         night_avg=float(filtered["Average heart rate"].iloc[0])
         night_min=float(filtered["Heart rate (min)"].iloc[0])
         night_max=float(filtered["Heart rate (max)"].iloc[0])
         # print('night avg=',night_avg)
         # print('night min=',night_min)
         # print('night max=',night_max)
-        print(type(night_min), repr(night_min))
         night_results.append({'date':date,
                               'avg_night':night_avg,
                               'min_night':night_min,
@@ -472,11 +477,10 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
     night_df=pd.DataFrame(night_results)
 
 
-
     return day_df,night_df
 
 
-def plotting(data,number,Flags=None,p=True):
+def plotting(data,number,data_path,saving_path,Flags=None,p=True):
     """
     Generates and saves various heart rate analysis plots and statistics for a given patient.
 
@@ -522,23 +526,24 @@ def plotting(data,number,Flags=None,p=True):
         - "active_days": list of active dates (or None)
         - "resting_plus_more": DataFrame of daily day/night HR statistics including resting HR (or None)
     """
-    Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(number)).mkdir(exist_ok=True) # creating new directory
+    Path(f"{saving_path}/heartRateRecord{number}").mkdir(exist_ok=True) # creating new directory
     ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
     data['value']=np.array([
             np.mean([int(x) for x in item.split(',')])  # Split and convert to integers, then average
             for item in np.char.strip(data['value'].to_numpy('str'),'[]')])
 
-    avg_hr_months,weeks,avg_week_hr, avg_hr_active_day,activities,time_y,avg_night,df=None,None,None,None,None,np.nan,None,None
+    avg_hr_months,weeks,avg_week_hr,avg_hr_active_day,activities,time_y,months,day_df,night_df=None,None,None,None,None,np.array([]),None,None,None
     if Flags.months:
-        months,avg_hr_months=months_calc(data,number)
+        months,avg_hr_months=months_calc(data,number,saving_path)
     if Flags.weeks:
-        weeks,avg_week_hr=week_calc(data,number)
+        weeks,avg_week_hr=week_calc(data,number,saving_path)
     if Flags.activities:
-        avg_hr_active_day,activities=active_days_calc(data,number,p)
+        avg_hr_active_day,activities=active_days_calc(data,number,p,data_path,saving_path)
     if Flags.total:
-        time_y=total_timespan(data,number)
+        time_y=total_timespan(data,number,saving_path)
     if Flags.day_night :
-        day_df,night_df=days_and_nights(data,number,p)
+        day_df,night_df=days_and_nights(data,number,p,data_path,saving_path)
+        print("plotting is running")
     return {"HRV":1/time_y,
             "avg_hr_months":avg_hr_months,
             "average_hr":np.average(time_y),
@@ -549,6 +554,22 @@ def plotting(data,number,Flags=None,p=True):
             "active_days":activities,
             "resting_and_days":day_df,
             "nights":night_df}
+
+def circular_mean(df,key_from,key_to,first=True):
+    start=df[key_from]
+    end=df[key_to]
+    start=start.dt.hour + start.dt.minute/60
+    end=end.dt.hour + end.dt.minute/60
+    time_slept=(end-start)%24
+    weights=time_slept/np.sum(time_slept)
+    weights=weights.to_numpy()
+    if first==True:
+        hours = df[key_from].dt.hour + df[key_from].dt.minute / 60
+    else:
+        hours = df[key_to].dt.hour + df[key_to].dt.minute / 60
+    radian_angles=(2*np.pi/24)*hours
+    averaged_radian_angle=np.arctan2((np.sin(radian_angles)*weights).mean(),(np.cos(radian_angles)*weights).mean())
+    return (averaged_radian_angle/(2*np.pi)*24)%24
 
 def detecting_crossover(log_F,log_n):
     """
@@ -685,7 +706,7 @@ def creating_or_updating_tables(con,table_name,columns,patient_num,value_matrix,
             except:
                 cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(value_matrix[i][j],patient_num[i])) # updates the subsequent values in the table
 
-def DFA_analysis(RR,patientNum,data_type,plot=True):
+def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True):
     """
     Performs DFA analysis with crossover detection on RR intervals.
 
@@ -713,7 +734,7 @@ def DFA_analysis(RR,patientNum,data_type,plot=True):
     H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
     
     ax,fig=DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,data_type,plot) # plots the DFA results
-    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,fig,ax,data_type)
+    m,logn=plotting_scaling_pattern(log_n,log_F,patientNum,fig,ax,data_type,saving_path)
 
     H_hat=(m1,m2 ,cross_point) # returns the scaling exponents and crossover point for PPG data
     return H_hat,m,logn
@@ -874,7 +895,7 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot):
         - The function saves the scaling pattern plot to a fixed directory.
     """
     if not plot: 
-        return None
+        return None,None
      
     cross_indx,a1,a2=params
     cross_point=log_n[cross_indx]
@@ -1049,7 +1070,7 @@ def interpolating_for_uniform(logn,log_f):
     smoothed_log_f=spline(uniform_log_n)
     return uniform_log_n,smoothed_log_f
 
-def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type):
+def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type,saving_path):
     """
     Plots the local scaling exponent (slope) across scales using alpha-beta filtering on DFA data.
 
@@ -1091,11 +1112,13 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type):
     ax.set_ylabel('gradient at each value of n - $m_{e}(n)$')
     ax.set_title('continuous gradient over the DFA plot')
     plt.show()
-    fig.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{patient_num}-{type}.png')
+    Path(f"{saving_path}/Graphs").mkdir(exist_ok=True)
+    Path(f"{saving_path}/Graphs/scaling_patterns/").mkdir(exist_ok=True) # creating new directory
+    fig.savefig(f'{saving_path}/Graphs/scaling_patterns/{patient_num}-{type}.png')
     plt.close()
     return m,interpolated[0]
 
-def ECG_HRV(ECG_RR,patientNum):
+def ECG_HRV(ECG_RR,patientNum,saving_path):
     """
     Processes and visualizes ECG-based RR interval data, before and after outlier removal.
 
@@ -1120,8 +1143,8 @@ def ECG_HRV(ECG_RR,patientNum):
     ax[1].set_title('ECG HRV Filtered')
     ax[1].set_ylabel('RR interval (s)')
     ax[1].set_xlabel('Beats')
-    Path("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}".format(patientNum)).mkdir(exist_ok=True) # creating new directory
-    fig.savefig("/data/t/smartWatch/patients/completeData/DamianInternshipFiles/heartRateRecord{}/ECG_HRV.png".format(patientNum))
+    Path(f"{saving_path}/heartRateRecord{patientNum}").mkdir(exist_ok=True) # creating new directory
+    fig.savefig(f"{saving_path}/heartRateRecord{patientNum}/ECG_HRV.png")
     plt.close()
     return ECG_RR # returns the RR intervals for the ECG data
 
@@ -1169,8 +1192,7 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2)
     if DFA_on==False:
         avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
-    print('avg_grad_1',avg_gradient1)
-    print('avg_grad_1',avg_gradient2)
+
     try:
         mask1=np.where(avg_log_n1>0.55)
     except:
@@ -1179,14 +1201,10 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     mask2=np.where(avg_log_n2>0.55)
     fig,ax=plt.subplots(figsize=(12, 8),layout='constrained')
     if np.max(avg_gradient1[mask1])>2:
-        print('1')
         ax.set_ylim(0,np.max(avg_gradient1[mask1])+0.5)
-        print(np.max(avg_gradient1)+0.5)
     elif np.max(avg_gradient2[mask2])>2:
-        print('2')
         ax.set_ylim(0,np.max(avg_gradient2[mask2])+0.5)
     else:
-        print('3')
         ax.set_ylim(0,2)
 
     
@@ -1203,7 +1221,7 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     ax.legend()
     ax.grid(zorder=0)
     plt.show()
-    fig.savefig(f'/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png')
+    fig.savefig(f"/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png")
     plt.close()
     return avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
 
@@ -1212,11 +1230,19 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(True,True,True,True,True,True,True)
+    Flags=flags(False,False,False,False,True,False,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
-    
+
+    patient_data_path="/data/t/smartWatch/patients/completeData/patData"
+    volunteer_data_path="/data/t/smartWatch/patients/volunteerData"
+    saving_path="/data/t/smartWatch/patients/completeData/DamianInternshipFiles"
+
+    if Flags.patient_analysis==True:
+        data_path=patient_data_path
+    else:
+        data_path=volunteer_data_path
     
     
     # dictionary storing all patient data calcualted in the code to be outputted to db
@@ -1247,7 +1273,6 @@ def main():
                           'Surrogate_data_linear':[],
                           'Surrogate_data_noise':[]}
     counter=0
-    data=pd.read_excel('/data/t/smartWatch/patients/completeData/dataCollection_wPatch Starts.xlsx','Sheet1')
     scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
     volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
@@ -1266,30 +1291,29 @@ def main():
         else:
             break
 
-
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=Flags.patient_analysis)
-            ECG_RR=ECG_HRV(ECG_RR,patientNum)
+            ECG_RR=ECG_HRV(ECG_RR,patientNum,saving_path)
             if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
                 scaling_patterns_ECG.loc[i]=[[],[]]
                 H_hat_ECG=(np.nan,np.nan,np.nan)
             else:
-                H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',plot=Flags.plot_DFA)
+                H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',saving_path,plot=Flags.plot_DFA)
                 scaling_patterns_ECG.loc[i]=[m,log_n]
         except Exception as e:
             print(f"ECG error for patient {patientNum}: {e}")
-            #traceback.print_exc()
+            traceback.print_exc()
             continue
         try:
-            heartRateDataByMonth=sortingHeartRate(patientNum,patient=Flags.patient_analysis)
-            RR=plotting(heartRateDataByMonth,patientNum,Flags,p=Flags.patient_analysis)
-            if RR['HRV'] is None or len(RR['HRV'])<1000:
+            heartRateData_sorted=sortingHeartRate(patientNum,data_path,patient=Flags.patient_analysis)
+            RR=plotting(heartRateData_sorted,patientNum,data_path,saving_path,Flags,p=Flags.patient_analysis)
+            if RR['HRV'].size<1000:
                 print('not enough PPG data to perform DFA analysis')
                 scaling_patterns_PPG.loc[i]=[[],[]]
                 H_hat=(np.nan,np.nan,np.nan)
             else:
-                H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',plot=Flags.plot_DFA)
+                H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',saving_path,plot=Flags.plot_DFA)
                 scaling_patterns_PPG.loc[i]=[m,log_n]
         except Exception as e:
             print(f"PPG error for patient {patientNum}: {e}")
@@ -1307,7 +1331,7 @@ def main():
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    
+    print(metrics)
     databasing(metrics,Flags)
     
 
