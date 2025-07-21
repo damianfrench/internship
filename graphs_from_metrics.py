@@ -378,13 +378,16 @@ def fetching_week_data(cur,mask,nan_mask):
     df_weeks.rename(columns={df_weeks.columns[0]:'Patient_number'},inplace=True) # creates a dataframe containing the week data for the specific group wanted
     return df_weeks
 
-def fetching_patient_data(cur,nan_mask,mask):
+def fetching_patient_data(cur,nan_mask,mask,columns):
+    if not columns:
+        colums=['*']
+    columns_str=', '.join(columns)
+    sql=f"SELECT {columns_str} FROM Patients"
     if len(mask)!=0:
-        Group_data=np.array(cur.execute("SELECT * FROM Patients").fetchall())[nan_mask][mask]
+        Group_data=np.array(cur.execute(sql).fetchall())[nan_mask][mask]
     else:
-        Group_data=np.array(cur.execute("SELECT * FROM Patients").fetchall())
-    df_patients=pd.DataFrame(Group_data)
-    df_patients=df_patients.drop(columns=0)
+        Group_data=np.array(cur.execute(sql).fetchall())
+    df_patients=pd.DataFrame(Group_data,columns=columns)
     return df_patients
 
 def fetching_DayAndNight_data(cur,patient_num):
@@ -459,28 +462,52 @@ def graphing_day_and_night(cur,df):
         plt.close()
 
 def crossover(cur):
-    df_volunteers=fetching_patient_data(cur,[],[])
-    df_patients=np.array(fetching_patient_data(sqlite3.connect('patient_metrics.db').cursor(),[],[]))
-    df_volunteers=np.array(df_volunteers.drop(index=2))
-    #t_test(df_patients[:,7],df_volunteers[:,7].astype(np.float64))
-    print(df_volunteers[:,0])
-    x_axis=df_patients[:,0]
-    print(len(x_axis))
-    print(df_volunteers[:,7].astype(np.float64))
-    plt.xlabel('Patient number')
-    plt.tick_params(axis='x',labelrotation=-90,length=0.1)
-    plt.axhline(np.mean(df_patients[:,7].astype(np.float64)),color='blue',label='average PPT patient crossover')
+    df_volunteers=fetching_patient_data(cur,[],[],['Number','crossover_PPG','crossover_ECG'])
+    df_patients=fetching_patient_data(sqlite3.connect('patient_metrics.db').cursor(),[],[],['Number','crossover_PPG','crossover_ECG'])
+    df_patients=df_patients.apply(pd.to_numeric,errors='coerce')
+    df_volunteers['crossover_ECG']=pd.to_numeric(df_volunteers['crossover_ECG'],errors='coerce')
+    df_volunteers['crossover_PPG']=pd.to_numeric(df_volunteers['crossover_PPG'],errors='coerce')
+
+
+    # df_volunteers=np.array(df_volunteers.drop(index=2))
+
+    # t_test(df_patients[:,7],df_volunteers[:,7].astype(np.float64))
+    x_axis1=df_patients['Number']
+    x_axis2=np.arange(0,len(df_volunteers['Number']),1)
+    fig,ax=plt.subplots(2,2,figsize=(12,8),layout='constrained')
+    ax[0][0].set_xlabel('Patient number')
+    ax[0][0].tick_params(axis='x',labelrotation=-90,length=0.1)
+    ax[0][0].axhline(np.mean(df_patients['crossover_PPG'].astype(np.float64)),color='blue',label='average PPG patient crossover')
+    print(f'Patient PPG p value:{shapiro_testing(df_patients['crossover_PPG'])}')
+    print(f'Patient ECG p value:{shapiro_testing(df_patients['crossover_ECG'])}')
+    print(f'volunteer PPG p value:{shapiro_testing(df_volunteers['crossover_PPG'])}')
+    print(f'volunteer ECG p value:{shapiro_testing(df_volunteers['crossover_ECG'])}')
+
+    ax[0][0].set_ylabel('crossover point')
+    ax[0][0].set_title('crossover points on DFA graph for patients')
+    ax[0][0].scatter(x_axis1,df_patients['crossover_PPG'].astype(np.float64),color='blue',label='PPG patient crossovers')
+    ax[0][0].scatter(x_axis1,df_patients['crossover_ECG'].astype(np.float64),color='orange',label='ECG patient crossovers')
+    ax[0][0].axhline(np.mean(df_patients['crossover_ECG'].astype(np.float64)),color='orange',label='average ECG patient crossover')
     
-    plt.ylabel('crossover point')
-    plt.title('crossover points on DFA graph for patients')
-    plt.scatter(x_axis,df_patients[:,7].astype(np.float64),color='blue',label='PPG patient crossovers')
-    plt.scatter(x_axis,df_patients[:,8].astype(np.float64),color='orange',label='ECG patient crossovers')
-    plt.axhline(np.mean(df_patients[:,8].astype(np.float64)),color='orange',label='average ECG patient crossover')
-    plt.legend()
-    #plt.scatter(x_axis,df[:,8].astype(np.float64))
-    
-    plt.tight_layout()
-    plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/testing_metrics/crossovers.png')
+
+    ax[0][1].scatter(x_axis2,df_volunteers['crossover_PPG'].astype(np.float64),color='blue',label='PPG patient crossovers')
+    ax[0][1].scatter(x_axis2,df_volunteers['crossover_ECG'].astype(np.float64),color='orange',label='ECG patient crossovers')
+    ax[0][1].set_xticks(x_axis2,df_volunteers['Number'])
+    ax[0][1].tick_params(axis='x',labelrotation=-90,length=0.08)
+    ax[0][1].set_xlabel('Volunteer Label')
+    ax[0][1].set_ylabel('crossover point')
+    ax[0][1].set_title('crossover points on DFA graph for Volunteers')
+
+
+
+
+    df_patients.plot(kind='box',x='Number',y=['crossover_PPG','crossover_ECG'],ax=ax[1][0],title='Patient Box Plots')
+    df_volunteers.plot(kind='box',x='Number',y=['crossover_PPG','crossover_ECG'],ax=ax[1][1],title='Volunteer Box Plots')
+
+
+    ax[0][0].legend()
+    ax[0][1].legend()
+    fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/testing_metrics/crossovers.png')
 
 
 def group_analysis(df,x_var,y_var,Group_num,normalised=True,index='Patient_number'):
@@ -545,7 +572,7 @@ def Gaussian_mixing(data):
     return features['gmm_cluster'],[Group1_mask,Group2_mask,Group3_mask,Group4_mask,Group5_mask]
 def main():
     type='ECG_'
-    con=sqlite3.connect('patient_metrics.db') # opens database
+    con=sqlite3.connect('volunteer_metrics.db') # opens database
     cur=con.cursor()
     #months_hr(cur,con)
     #weeks_hr(con,cur)

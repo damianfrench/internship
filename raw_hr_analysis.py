@@ -1247,6 +1247,16 @@ def avg_scaling_pattern(scaling_patterns):
 
     return avg_gradient, avg_log_n, std
 
+
+def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,patient=True,DFA_on=True):
+    diff=pd.DataFrame({})
+    diff[['interpolated_logn','interpolated_gradient']]=scaling_patterns1.apply(lambda row: interpolating_for_uniform(np.array(row['log_n']), np.array(row['gradient'])), axis=1,result_type='expand')
+    diff[['interpolated_logn','interpolated_gradient']]=scaling_patterns2.apply(lambda row: interpolating_for_uniform(np.array(row['log_n']), np.array(row['gradient'])), axis=1,result_type='expand')
+    print(diff)
+    
+
+
+
 def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,patient=True,DFA_on=True):
     """
     Plots the average scaling pattern from a DataFrame of scaling patterns.
@@ -1350,7 +1360,7 @@ def main():
     scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
     volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
 
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1369,7 +1379,7 @@ def main():
             ECG_RR=ECG_HRV(ECG_RR,patientNum,saving_path)
             if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
-                scaling_patterns_ECG.loc[i]=[[],[]]
+                # scaling_patterns_ECG.loc[i]=[[],[]]
                 H_hat_ECG=(np.nan,np.nan,np.nan)
             else:
                 H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',saving_path,plot=Flags.plot_DFA)
@@ -1383,7 +1393,7 @@ def main():
             RR=plotting(heartRateData_sorted,patientNum,data_path,saving_path,Flags,p=Flags.patient_analysis)
             if RR['HRV'].size<1000:
                 print('not enough PPG data to perform DFA analysis')
-                scaling_patterns_PPG.loc[i]=[[],[]]
+                # scaling_patterns_PPG.loc[i]=[[],[]]
                 H_hat=(np.nan,np.nan,np.nan)
             else:
                 H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',saving_path,plot=Flags.plot_DFA)
@@ -1401,10 +1411,10 @@ def main():
         
         
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
+    plotting_scaling_pattern_difference(scaling_patterns_PPG,scaling_patterns_ECG,Flags.patient_analysis,Flags.plot_DFA)
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    print(metrics)
     databasing(metrics,Flags)
     
 
