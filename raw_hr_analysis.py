@@ -85,7 +85,6 @@ def sortingActivityData(number,data_path,
     return activities['from'],activities['to']
 
 def reading_sleep_Data(number,data_path,patient=True):
-    print(patient)
     if patient:
         sleep_data=(pd.read_csv(f'{data_path}/record{number}/sleep.csv',header=0))
     else:
@@ -353,12 +352,10 @@ def days_and_nights(data,number,patient,data_path,saving_path):
         - pandas.DataFrame : A DataFrame with daily heart rate statistics and estimated resting HR, returned from `resting_max_and_min`.
     """
     try:
-        print(patient)
         sleep_data=reading_sleep_Data(number,data_path,patient)
     except:
         print(f'patient number {number} doesnt have any sleep data')
         return pd.DataFrame(),pd.DataFrame()
-    print(f"time slept=\n{sleep_data['to']-sleep_data['from']}")
     average_bedtime=circular_mean(sleep_data,'from','to')
     average_wakeup=circular_mean(sleep_data,'from','to',first=False)
     print(f'average wake up ={average_wakeup}\n average bedtime={average_bedtime}')
@@ -406,15 +403,19 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         Heart rate values corresponding to the day-time mask.
     night_data : pandas.Series
         Heart rate values corresponding to the night-time mask.
+    sleep_data : dataframe containing start, end, and various heart rate metrics during sleep.
 
     Returns
     -------
-    pandas.DataFrame
+    day_df
         A DataFrame containing the following columns for each date:
-        - 'date'
-        - 'avg_day', 'min_day', 'max_day'
-        - 'avg_night', 'min_night', 'max_night'
+        - 'day_date'
+        - 'day_avg', 'day_min', 'day_max'
         - 'resting_hr' : minimum 5-point rolling average during night-time
+    night_df
+        A DataFrame containing the following columns for each date:
+        - 'night_data'
+        - 'night_avg', 'night_min', 'night_max'
     """
     day_results=[]
     night_results=[]
@@ -447,10 +448,10 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         else:
             resting_hr_val = np.nan
         day_results.append({
-        'date': date_str,
-        'avg_day': avg_day,
-        'min_day': min_day,
-        'max_day': max_day,
+        'day_dates': date_str,
+        'day_avg': avg_day,
+        'day_min': min_day,
+        'day_max': max_day,
         'resting_hr': resting_hr_val
     })
     
@@ -466,10 +467,10 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         # print('night avg=',night_avg)
         # print('night min=',night_min)
         # print('night max=',night_max)
-        night_results.append({'date':date,
-                              'avg_night':night_avg,
-                              'min_night':night_min,
-                            'max_night':night_max})
+        night_results.append({'night_dates':date,
+                              'night_avg':night_avg,
+                              'night_min':night_min,
+                            'night_max':night_max})
         
 
     
@@ -516,15 +517,15 @@ def plotting(data,number,data_path,saving_path,Flags=None,p=True):
     dict
         Dictionary containing the following keys and their computed values:
         - "HRV": numpy.ndarray, inverse of heart rate values (if total_on is True)
-        - "avg_hr_months": list of monthly average heart rates (or None)
-        - "avg_hr_night": float, average night-time HR (or None)
-        - "average_hr": float, overall average HR across the study
+        - "avg_hr_per_months": list of monthly average heart rates (or None)
+        - "avg_hr_overall": float, overall average HR across the study
         - "months": list of month labels (e.g., ['Jan 2024', 'Feb 2024', ...])
-        - "avg_week_hr": list of weekly average heart rates (or None)
-        - "avg_active_hr": list of HR values on active days (or None)
+        - "avg_hr_per_week": list of weekly average heart rates (or None)
+        - "avg_hr_active": list of HR values on active days (or None)
         - "weeks": list of ISO weeks corresponding to the data (or None)
-        - "active_days": list of active dates (or None)
-        - "resting_plus_more": DataFrame of daily day/night HR statistics including resting HR (or None)
+        - "activities": list of active dates (or None)
+        - "resting_and_days": Dataframe storing the max, min and average heartrates from each day and the resting heartrate
+        - "nights": Dataframe storing the max, min and average heartrates from each night
     """
     Path(f"{saving_path}/heartRateRecord{number}").mkdir(exist_ok=True) # creating new directory
     ### time stamps have the form yr;mnth;dy;hr;min;sec;tz ### 
@@ -543,19 +544,49 @@ def plotting(data,number,data_path,saving_path,Flags=None,p=True):
         time_y=total_timespan(data,number,saving_path)
     if Flags.day_night :
         day_df,night_df=days_and_nights(data,number,p,data_path,saving_path)
-        print("plotting is running")
     return {"HRV":1/time_y,
-            "avg_hr_months":avg_hr_months,
-            "average_hr":np.average(time_y),
+            "avg_hr_per_month":avg_hr_months,
+            "avg_hr_overall":np.average(time_y),
             "months":months,
-            "avg_week_hr":avg_week_hr,
-            "avg_active_hr":avg_hr_active_day,
+            "avg_hr_per_week":avg_week_hr,
+            "avg_hr_active":avg_hr_active_day,
             "weeks":weeks,
-            "active_days":activities,
+            "activities":activities,
             "resting_and_days":day_df,
             "nights":night_df}
 
 def circular_mean(df,key_from,key_to,first=True):
+    """
+    Computes the weighted circular mean of time-of-day values (in hours), useful for periodic data like sleep times.
+
+    This function calculates the circular average of timestamps (e.g., sleep start or end times), accounting for
+    the 24-hour cycle. It uses the amount of time spent (e.g., sleeping) as a weight for each sample.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        A DataFrame containing datetime columns representing time intervals (e.g., sleep start and end).
+
+    key_from : str
+        Column name of the start datetime (e.g., 'sleep_start').
+
+    key_to : str
+        Column name of the end datetime (e.g., 'sleep_end').
+
+    first : bool, default=True
+        If True, computes the circular mean of the `key_from` column (e.g., average sleep onset time).
+        If False, computes the circular mean of the `key_to` column (e.g., average wake-up time).
+
+    Returns:
+    --------
+    float
+        The circular mean in hours (0-24), representing the average time of day.
+
+    Notes:
+    ------
+    - The result is weighted by duration (`key_to` - `key_from`), assuming longer durations contribute more.
+    - Handles wrap-around at midnight using modulo 24 and trigonometric averaging.
+    """
     start=df[key_from]
     end=df[key_to]
     start=start.dt.hour + start.dt.minute/60
@@ -926,71 +957,113 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot):
     
     return ax[1],fig
 
-def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
-    """
-    Appends a new set of heart rate and DFA analysis metrics to a cumulative dictionary.
 
-    This function updates the `metrics` dictionary with data from a single patient or recording session.
-    It extracts key heart rate summary statistics, DFA scaling exponents, and day/night analysis results
-    from the input parameters and appends them to the corresponding lists in the dictionary.
+def appending_metrics(metrics_dict,fields,patientNum,data):
+    """
+    Appends data for a set of fields into the corresponding lists in a cumulative metrics dictionary.
+
+    This function safely handles both dictionaries and DataFrames to populate `metrics_dict`,
+    inserting default empty lists when data is missing or an error occurs. It is commonly used to
+    collect structured time-series or summary statistics for each patient.
 
     Parameters:
-        metrics (dict): A dictionary containing aggregated metrics across multiple patients or sessions.
-                        Must contain pre-initialized keys such as:
-                            'Patient_num', 'avg_hr_per_month', 'avg_hr_night', 'avg_hr_overall',
-                            'avg_hr_active', 'scaling_exponent_noise', 'scaling_exponent_linear',
-                            'ECG_scaling_exponent_noise', 'ECG_scaling_exponent_linear',
-                            'crossover_PPG', 'crossover_ECG', 'avg_hr_per_week', 'months',
-                            'weeks', 'activities', 'days', 'day_avg', 'night_avg', 'day_min',
-                            'night_min', 'day_max', 'night_max', 'resting_hr'
+    -----------
+    metrics_dict : dict
+        The main dictionary where aggregated patient metrics are stored. Each key should already
+        be initialized to a list.
 
-        patientNum (str or int): Unique identifier for the patient or data session.
+    fields : list of str
+        A list of keys to be extracted from the `data` object and appended into `metrics_dict`.
 
-        RR (dict): A dictionary of processed heart rate and temporal features, typically the output of the `plotting()` function.
-                   Expected keys include:
-                        'avg_hr_months', 'avg_hr_night', 'average_hr', 'avg_active_hr',
-                        'avg_week_hr', 'months', 'weeks', 'active_days', 'resting_plus_more'
+    patientNum : str or int
+        Identifier for the patient, used for logging errors.
 
-        H_hat (tuple): DFA results from PPG, expected to be (scaling_noise, scaling_linear, crossover_point_PPG)
-
-        H_hat_ECG (tuple): DFA results from ECG, expected to be (scaling_noise, scaling_linear, crossover_point_ECG)
+    data : dict or pandas.DataFrame
+        A structured data source (e.g., output of heart rate feature analysis). If `dict`, values
+        are accessed directly by key. If `DataFrame`, values are accessed and converted to numpy arrays.
 
     Returns:
-        dict: The updated `metrics` dictionary with the new values appended.
+    --------
+    dict
+        The updated `metrics_dict` with new entries for the specified fields, or empty entries
+        if the data was unavailable or caused an exception.
 
     Notes:
-        - If the `resting_plus_more` DataFrame is missing or malformed, the day/night/resting HR data is skipped.
-        - This function assumes the `metrics` dictionary already contains all necessary keys with list values.
+    ------
+    - If `data` is missing a specified field or contains errors, an empty list is appended in its place.
+    - Useful when appending daily summaries, night stats, or other batch features from different stages.
+    """
+    if type(data)==dict:
+        try:
+            for key in fields:
+                metrics_dict[key].append(data[key])
+        except Exception as e:
+            print(f"day_data error for patient {patientNum}: {e}")
+            for key in fields:
+                metrics_dict[key].append([])
+    elif type(data)==pd.core.frame.DataFrame:
+        try:
+            for key in fields:
+                metrics_dict[key].append(data[key].to_numpy())
+        except Exception as e:
+            print(f"day_data error for patient {patientNum}: {e}")
+            for key in fields:
+                metrics_dict[key].append([])
+    return metrics_dict
+
+
+def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
+    """
+    Aggregates heart rate and DFA metrics for a given patient and appends them to the main metrics dictionary.
+
+    This function consolidates per-patient heart rate variability metrics, daily/night statistics,
+    and DFA results from both PPG and ECG modalities. The results are appended to a centralized
+    dictionary that aggregates across all patients for later analysis or export.
+
+    Parameters:
+    -----------
+    metrics : dict
+        The central metrics dictionary that is being incrementally built for all patients.
+        Keys must already be initialized with empty lists.
+
+    patientNum : str or int
+        The unique ID for the patient being analyzed.
+
+    RR : dict
+        Dictionary of heart rate variability and daily features, usually returned from `plotting()` or similar.
+        Expected keys include:
+            - 'avg_hr_per_week', 'avg_hr_per_month', 'avg_hr_overall', 'avg_hr_active',
+            - 'months', 'weeks', 'activities',
+            - 'resting_and_days' (DataFrame), 'nights' (DataFrame)
+
+    H_hat : tuple of float
+        DFA results from PPG analysis, formatted as:
+            (scaling_exponent_noise, scaling_exponent_linear, crossover_point_PPG)
+
+    H_hat_ECG : tuple of float
+        DFA results from ECG analysis, formatted as:
+            (scaling_exponent_noise, scaling_exponent_linear, crossover_point_ECG)
+
+    Returns:
+    --------
+    dict
+        The updated `metrics` dictionary with all relevant fields from this patient added.
+
+    Notes:
+    ------
+    - If certain expected substructures are missing (like 'resting_and_days' or 'nights'), default
+      empty values will be appended.
+    - Internally uses `appending_metrics()` to handle structured fields safely.
+    - This is intended to be called once per patient during a full cohort analysis loop.
     """
 
-    
-    
-
     metrics['Patient_num'].append(patientNum)
-    metrics['avg_hr_per_week'].append(RR['avg_week_hr'])
-    metrics['avg_hr_per_month'].append(RR['avg_hr_months'])
-    metrics['avg_hr_overall'].append(RR['average_hr'])
-    metrics['avg_hr_active'].append(RR['avg_active_hr'])
-    metrics['months'].append(RR['months'])
-    metrics['weeks'].append(RR['weeks'])
-    metrics['activities'].append(RR['active_days'])
+    metrics=appending_metrics(metrics,['avg_hr_per_week','avg_hr_per_month','avg_hr_overall','avg_hr_active','months','weeks','activities'],patientNum,RR)
     day_df=RR['resting_and_days']
     night_df=RR['nights']
-    try:
-        metrics['day_dates'].append(day_df['date'].to_numpy())
-        metrics['day_avg'].append(day_df['avg_day'].to_numpy())
-        metrics['day_min'].append(day_df['min_day'].to_numpy())
-        metrics['day_max'].append(day_df['max_day'].to_numpy())
-        metrics['resting_hr'].append(day_df['resting_hr'].to_numpy())
-    except Exception as e:
-        print(f"day_data error for patient {patientNum}: {e}")
-    try:
-        metrics['night_dates'].append(night_df['date'].to_numpy())
-        metrics['night_avg'].append(night_df['avg_night'].to_numpy())
-        metrics['night_min'].append(night_df['min_night'].to_numpy())
-        metrics['night_max'].append(night_df['max_night'].to_numpy())
-    except Exception as e:
-        print(f"night_data error for patient {patientNum}: {e}")
+    metrics=appending_metrics(metrics,['day_dates','day_avg','day_min','day_max','resting_hr'],patientNum,day_df)
+    metrics=appending_metrics(metrics,['night_dates','night_avg','night_min','night_max'],patientNum,night_df)
+
 
     metrics['scaling_exponent_noise'].append(H_hat[0])
     metrics['scaling_exponent_linear'].append(H_hat[1])
@@ -1230,7 +1303,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(False,False,False,False,True,False,True)
+    Flags=flags(True,True,True,True,True,True,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
