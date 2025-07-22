@@ -15,6 +15,7 @@ import sys
 from scipy.interpolate import UnivariateSpline
 import traceback
 from collections import namedtuple
+from matplotlib import colormaps
 
 sys.path.append('/data/t/smartWatch/patients/completeData')
 from patient_analysis3 import patient_output
@@ -1118,7 +1119,7 @@ def alpha_beta_filter(x,y,Q=500):
         m_est[k]=m_est[k-1]+b_k/d*(y[k]-G_pred)
     return m_est,G_est
 
-def interpolating_for_uniform(logn,log_f):
+def interpolating_for_uniform(logn,log_f,min,max):
     """
     Interpolates and smooths log-log data onto a uniformly spaced grid using a spline.
 
@@ -1138,7 +1139,7 @@ def interpolating_for_uniform(logn,log_f):
         - Uses a `UnivariateSpline` with `s=0` (interpolating spline, no smoothing).
 
     """
-    uniform_log_n=np.linspace(logn.min(),logn.max(),100)
+    uniform_log_n=np.linspace(min,max,100)
     spline=UnivariateSpline(logn,log_f,s=0)
     smoothed_log_f=spline(uniform_log_n)
     return uniform_log_n,smoothed_log_f
@@ -1168,7 +1169,7 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type,saving_path):
         - Dashed lines at 0.5, 1.0, and 1.5 are plotted as visual references.
 
     """
-    interpolated=interpolating_for_uniform(log_n,log_f)
+    interpolated=interpolating_for_uniform(log_n,log_f,log_n.min(),log_n.max())
     mask=np.where(interpolated[0]>0.55)
     m,log_f=alpha_beta_filter(*interpolated)
     if ax is None:
@@ -1248,13 +1249,63 @@ def avg_scaling_pattern(scaling_patterns):
     return avg_gradient, avg_log_n, std
 
 
-def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,patient=True,DFA_on=True):
-    diff=pd.DataFrame({})
-    diff[['interpolated_logn','interpolated_gradient']]=scaling_patterns1.apply(lambda row: interpolating_for_uniform(np.array(row['log_n']), np.array(row['gradient'])), axis=1,result_type='expand')
-    diff[['interpolated_logn','interpolated_gradient']]=scaling_patterns2.apply(lambda row: interpolating_for_uniform(np.array(row['log_n']), np.array(row['gradient'])), axis=1,result_type='expand')
-    print(diff)
+def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type1,type2,saving_path,patient=True,DFA_on=True):
+    print(np.shape(len(scaling_patterns1['gradient'])))
+
+    merged=pd.merge(scaling_patterns1,scaling_patterns2,on='patient_num',suffixes=('_1','_2'))
+    merged['gradient_diff']=merged['gradient_1']-merged['gradient_2']
+    merged['log_n_diff']=merged.apply(lambda row: (row['log_n_1']+row['log_n_2'])/2,axis=1)
+    print(merged['patient_num'].to_list())
+    fig,ax=plt.subplots(figsize=(12,8),layout='constrained')
+    viridis=plt.colormaps['viridis']
+    new_colors=viridis(np.linspace(0,1,len(merged['patient_num'])))
     
 
+    
+    for i,row in merged.iterrows():
+        x=row['log_n_diff']
+        y=row['gradient_diff'][x>0.55]
+        mask=(x>2)
+        percentage_through=i/len(merged['patient_num'])
+        ax.plot(x[x>0.55],y,label=f'Patient Number {row['patient_num']}',color=new_colors[i])
+    ax.set_title('Difference in scaling patterns between ECG and PPG - $m_{ECG}-m_{PPG}$')
+    ax.set_xlabel('logged size of integral slices')
+    ax.set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$ ')
+    ax.grid()
+    ax.axhline(0,linestyle='dashed',color='k')
+    ax.legend()
+    log_n_in_range,gradient_range=scaling_pattern_difference_analysis(merged,ax)
+    ax2=ax.twinx()
+    ax2.plot(log_n_in_range,gradient_range,color='red', label='gradient range', linewidth=3, zorder=5, alpha=1.0)
+    ax2.set_ylabel('gradient range')
+    ax2.spines['right'].set_linewidth(2)
+    ax2.spines['right'].set_color('red')
+    ax2.legend()
+    plt.show()
+    fig.savefig(f"{saving_path}/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-difference.png")
+    plt.close()
+
+    
+
+
+def scaling_pattern_difference_analysis(df,ax):
+    print(df)
+    df[['interpolated_log_n','interpolated_gradient']]=df.apply(lambda row: interpolating_for_uniform(np.array(row['log_n_diff']), np.array(row['gradient_diff']),2,3), axis=1,result_type='expand')
+    # analysing_data=np.array(list(zip(df['interpolated_log_n'],df['interpolated_gradient'].to_numpy())))
+    # print(analysing_data)
+    # print(analysing_data[:,0])
+    log_n_array = np.vstack(df['interpolated_log_n'].to_numpy())
+    gradient_array = np.vstack(df['interpolated_gradient'].to_numpy())
+    log_n_avg = np.mean(log_n_array, axis=0)
+    gradient_range = np.max(gradient_array, axis=0) - np.min(gradient_array, axis=0)
+
+    print('log_n_array',log_n_avg)
+    print('gradient_range',gradient_range)
+
+    return log_n_avg,gradient_range
+
+
+     
 
 
 def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,patient=True,DFA_on=True):
@@ -1313,7 +1364,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(True,True,True,True,True,True,True)
+    Flags=flags(False,False,False,False,False,True,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
@@ -1356,11 +1407,11 @@ def main():
                           'Surrogate_data_linear':[],
                           'Surrogate_data_noise':[]}
     counter=0
-    scaling_patterns_PPG=pd.DataFrame({'gradient':[],'log_n':[]})
-    scaling_patterns_ECG=pd.DataFrame({'gradient':[],'log_n':[]})
+    scaling_pattern_ECG_rows=[]
+    scaling_pattern_PPG_rows=[]
     volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
 
-    for i in range(2,10):
+    for i in range(2,50):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1383,10 +1434,13 @@ def main():
                 H_hat_ECG=(np.nan,np.nan,np.nan)
             else:
                 H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',saving_path,plot=Flags.plot_DFA)
-                scaling_patterns_ECG.loc[i]=[m,log_n]
+                scaling_pattern_ECG_rows.append({'patient_num':patientNum,
+                                                 'gradient':m,
+                                                 'log_n':log_n
+                })
         except Exception as e:
             print(f"ECG error for patient {patientNum}: {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             continue
         try:
             heartRateData_sorted=sortingHeartRate(patientNum,data_path,patient=Flags.patient_analysis)
@@ -1397,7 +1451,10 @@ def main():
                 H_hat=(np.nan,np.nan,np.nan)
             else:
                 H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',saving_path,plot=Flags.plot_DFA)
-                scaling_patterns_PPG.loc[i]=[m,log_n]
+                scaling_pattern_PPG_rows.append({'patient_num':patientNum,
+                                                 'gradient':m,
+                                                 'log_n':log_n
+                })
         except Exception as e:
             print(f"PPG error for patient {patientNum}: {e}")
             #traceback.print_exc()
@@ -1411,7 +1468,9 @@ def main():
         
         
         metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
-    plotting_scaling_pattern_difference(scaling_patterns_PPG,scaling_patterns_ECG,Flags.patient_analysis,Flags.plot_DFA)
+    scaling_patterns_ECG=pd.DataFrame(scaling_pattern_ECG_rows)
+    scaling_patterns_PPG=pd.DataFrame(scaling_pattern_PPG_rows)
+    plotting_scaling_pattern_difference(scaling_patterns_ECG,scaling_patterns_PPG,'ECG','PPG',saving_path,Flags.patient_analysis,Flags.plot_DFA)
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
