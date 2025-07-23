@@ -378,17 +378,18 @@ def fetching_week_data(cur,mask,nan_mask):
     df_weeks.rename(columns={df_weeks.columns[0]:'Patient_number'},inplace=True) # creates a dataframe containing the week data for the specific group wanted
     return df_weeks
 
-def fetching_patient_data(cur,nan_mask,mask,columns):
+def fetching_patient_data(cur,nan_mask,mask,columns,table):
     if not columns:
         colums=['*']
     columns_str=', '.join(columns)
-    sql=f"SELECT {columns_str} FROM Patients"
+    sql=f"SELECT {columns_str} FROM {table}"
     if len(mask)!=0:
         Group_data=np.array(cur.execute(sql).fetchall())[nan_mask][mask]
     else:
         Group_data=np.array(cur.execute(sql).fetchall())
     df_patients=pd.DataFrame(Group_data,columns=columns)
     return df_patients
+
 
 def fetching_DayAndNight_data(cur,patient_num):
     if patient_num!='all':
@@ -407,6 +408,17 @@ def fetching_DayAndNight_data(cur,patient_num):
     return df
 
 
+def comparing_scaling_in_patients_and_volunteers():
+    patient_con=sqlite3.connect('patient_metrics.db')
+    patient_cur=patient_con.cursor()
+    patient_data=fetching_patient_data(patient_cur,[],[],['Number','scaling_exponent_noise','scaling_exponent_linear','ECG_scaling_exponent_noise','ECG_scaling_exponent_linear'],'Patients')
+    patient_data=patient_data.apply(pd.to_numeric,errors='coerce')
+    volunteer_con=sqlite3.connect('volunteer_metrics.db')
+    volunteer_cur=volunteer_con.cursor()
+    volunteer_data=fetching_patient_data(volunteer_cur,[],[],['Number','scaling_exponent_noise','scaling_exponent_linear','ECG_scaling_exponent_noise','ECG_scaling_exponent_linear'],'Patients')
+    volunteer_data=volunteer_data.apply(pd.to_numeric,errors='coerce')
+    print(patient_data)
+    print(volunteer_data)
 
 def week_analysis(cur,masks,nan_mask,Group_num):
     print(fetching_patient_data(cur,nan_mask,masks[Group_num]))
@@ -462,8 +474,8 @@ def graphing_day_and_night(cur,df):
         plt.close()
 
 def crossover(cur):
-    df_volunteers=fetching_patient_data(cur,[],[],['Number','crossover_PPG','crossover_ECG'])
-    df_patients=fetching_patient_data(sqlite3.connect('patient_metrics.db').cursor(),[],[],['Number','crossover_PPG','crossover_ECG'])
+    df_volunteers=fetching_patient_data(cur,[],[],['Number','crossover_PPG','crossover_ECG'],'Patients')
+    df_patients=fetching_patient_data(sqlite3.connect('patient_metrics.db').cursor(),[],[],['Number','crossover_PPG','crossover_ECG'],'Patients')
     df_patients=df_patients.apply(pd.to_numeric,errors='coerce')
     df_volunteers['crossover_ECG']=pd.to_numeric(df_volunteers['crossover_ECG'],errors='coerce')
     df_volunteers['crossover_PPG']=pd.to_numeric(df_volunteers['crossover_PPG'],errors='coerce')
@@ -593,6 +605,7 @@ def main():
     #DayVsNight_analysis(cur)
     crossover(cur)
     #resting_hr(cur)
+    #comparing_scaling_in_patients_and_volunteers()
 
 
 

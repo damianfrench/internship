@@ -7,6 +7,7 @@ from pathlib import Path
 from scipy.optimize import curve_fit
 from scipy.stats import norm
 from scipy.stats import linregress
+from scipy.stats import spearmanr
 from MFDFA import MFDFA
 from datetime import datetime
 import csv
@@ -16,6 +17,7 @@ from scipy.interpolate import UnivariateSpline
 import traceback
 from collections import namedtuple
 from matplotlib import colormaps
+import statsmodels.api as sm
 
 sys.path.append('/data/t/smartWatch/patients/completeData')
 from patient_analysis3 import patient_output
@@ -380,7 +382,6 @@ def days_and_nights(data,number,patient,data_path,saving_path):
     fig.savefig(f'{saving_path}/heartRateRecord{number}/FullNight')
     plt.close()
     day_df,night_df=resting_max_and_min(night_mask,day_mask,data['start'].dt,day_y,night_y,sleep_data)
-  
 
     return day_df,night_df
 
@@ -420,6 +421,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
     """
     day_results=[]
     night_results=[]
+    nights_HRV_info=[]
 
     days=np.unique(time_index.normalize()) # normalises the time index to remove the time component
 
@@ -444,17 +446,38 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
                 current_val=np.mean(night_vals[j:j+5])
                 if current_val<resting_hr_val:
                     resting_hr_val=current_val
-        
-            
+ 
+            HRV_night=1/night_vals
+
         else:
             resting_hr_val = np.nan
+            HRV_night=np.nan
+
+        avg_HRV_night = np.mean(HRV_night) if len(night_vals) > 0 else np.nan
+        std_HRV_night = np.std(HRV_night) if len(night_vals) > 0 else np.nan
+
+        nights_HRV_info.append({
+            'night_dates':date_str,
+            'avg_PPG_HRV_night': avg_HRV_night,
+            'std_PPG_HRV_night':std_HRV_night
+        })
+        
+        HRV_day=1/day_vals
+        avg_HRV_day = np.mean(HRV_day) if len(day_vals) > 0 else np.nan
+        std_HRV_day= np.std(HRV_day) if len(day_vals) > 0 else np.nan
+
         day_results.append({
         'day_dates': date_str,
         'day_avg': avg_day,
         'day_min': min_day,
         'day_max': max_day,
-        'resting_hr': resting_hr_val
+        'resting_hr': resting_hr_val,
+        'avg_PPG_HRV_day': avg_HRV_day,
+        'std_PPG_HRV_day':std_HRV_day
     })
+        
+        
+
     
     nights=sleep_data['from'].dt.normalize().unique()
     for i, night in enumerate(nights):
@@ -468,6 +491,10 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         # print('night avg=',night_avg)
         # print('night min=',night_min)
         # print('night max=',night_max)
+
+
+        
+
         night_results.append({'night_dates':date,
                               'night_avg':night_avg,
                               'night_min':night_min,
@@ -477,6 +504,8 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
     
     day_df = pd.DataFrame(day_results)
     night_df=pd.DataFrame(night_results)
+    nights_HRV_df=pd.DataFrame(nights_HRV_info)
+    night_df=pd.merge(night_df,nights_HRV_df,on='night_dates')
 
 
     return day_df,night_df
@@ -1062,8 +1091,8 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     metrics=appending_metrics(metrics,['avg_hr_per_week','avg_hr_per_month','avg_hr_overall','avg_hr_active','months','weeks','activities'],patientNum,RR)
     day_df=RR['resting_and_days']
     night_df=RR['nights']
-    metrics=appending_metrics(metrics,['day_dates','day_avg','day_min','day_max','resting_hr'],patientNum,day_df)
-    metrics=appending_metrics(metrics,['night_dates','night_avg','night_min','night_max'],patientNum,night_df)
+    metrics=appending_metrics(metrics,['day_dates','day_avg','day_min','day_max','resting_hr','avg_PPG_HRV_day','std_PPG_HRV_day'],patientNum,day_df)
+    metrics=appending_metrics(metrics,['night_dates','night_avg','night_min','night_max','avg_PPG_HRV_night','std_PPG_HRV_night'],patientNum,night_df)
 
 
     metrics['scaling_exponent_noise'].append(H_hat[0])
@@ -1192,7 +1221,20 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type,saving_path):
     plt.close()
     return m,interpolated[0]
 
-def ECG_HRV(ECG_RR,patientNum,saving_path):
+
+def ECG_HRV_info(ECG_RR,ECG_R_times):
+    print(len(ECG_R_times),len(ECG_RR),'lengths')
+    ECG_RR_data=[]    
+    for i,RR in enumerate(ECG_RR.T):
+        RR = RR[~np.isnan(RR)] # removes nans
+        ECG_RR_data.append({'avg_ECG_HRV':np.mean(RR),
+                            'std_ECG_HRV':np.std(RR)})
+    ECG_RR_df=pd.DataFrame(ECG_RR_data)
+    print(ECG_RR_df)
+
+
+
+def ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path):
     """
     Processes and visualizes ECG-based RR interval data, before and after outlier removal.
 
@@ -1203,6 +1245,8 @@ def ECG_HRV(ECG_RR,patientNum,saving_path):
     Returns:
         np.ndarray: Cleaned, flattened RR interval array.
     """
+    print(f'ECG_RR={ECG_RR}')
+    ECG_HRV_info(ECG_RR,ECG_R_times)
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
     fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constrained')
@@ -1220,6 +1264,7 @@ def ECG_HRV(ECG_RR,patientNum,saving_path):
     Path(f"{saving_path}/heartRateRecord{patientNum}").mkdir(exist_ok=True) # creating new directory
     fig.savefig(f"{saving_path}/heartRateRecord{patientNum}/ECG_HRV.png")
     plt.close()
+    print(f'ECG_RR={ECG_RR}')
     return ECG_RR # returns the RR intervals for the ECG data
 
 def avg_scaling_pattern(scaling_patterns):
@@ -1256,27 +1301,45 @@ def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type
     merged['gradient_diff']=merged['gradient_1']-merged['gradient_2']
     merged['log_n_diff']=merged.apply(lambda row: (row['log_n_1']+row['log_n_2'])/2,axis=1)
     print(merged['patient_num'].to_list())
-    fig,ax=plt.subplots(figsize=(12,8),layout='constrained')
+    fig,ax=plt.subplots(3,1,figsize=(18,14), gridspec_kw={'height_ratios': [3, 3, 3]})
     viridis=plt.colormaps['viridis']
     new_colors=viridis(np.linspace(0,1,len(merged['patient_num'])))
-    
-
+    diff_matrix=np.vstack(merged['gradient_diff'].to_numpy())
+    mean_diff=np.mean(diff_matrix,axis=0)
+    sem_diff=np.std(diff_matrix,axis=0)/np.sqrt(diff_matrix.shape[0])
+    log_n=np.mean(np.vstack(merged['log_n_diff'].to_numpy()),axis=0)
+    mask=log_n>0.55
+    ax[2].plot(log_n[mask],mean_diff[mask],label='Mean Difference', color='black')
+    ax[2].fill_between(log_n[mask],mean_diff[mask]-sem_diff[mask],mean_diff[mask]+sem_diff[mask],color='grey',alpha=0.4)
+    ax[2].axhline(0,color='k',linestyle='--')
+    ax[2].legend()
+    ax[2].set_xlabel('logged size of integral slices')
+    ax[2].set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$')
+    ax[2].set_title('Mean difference Plot')
     
     for i,row in merged.iterrows():
         x=row['log_n_diff']
         y=row['gradient_diff'][x>0.55]
         mask=(x>2)
         percentage_through=i/len(merged['patient_num'])
-        ax.plot(x[x>0.55],y,label=f'Patient Number {row['patient_num']}',color=new_colors[i])
-    ax.set_title('Difference in scaling patterns between ECG and PPG - $m_{ECG}-m_{PPG}$')
-    ax.set_xlabel('logged size of integral slices')
-    ax.set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$ ')
-    ax.grid()
-    ax.axhline(0,linestyle='dashed',color='k')
-    ax.legend()
+        ax[0].plot(x[x>0.55],y,label=f'Patient Number {row['patient_num']}',color=new_colors[i])
+    ax[0].set_title('Difference in scaling patterns between ECG and PPG - $m_{ECG}-m_{PPG}$')
+    ax[0].set_xlabel('logged size of integral slices')
+    ax[0].set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$')
+    ax[0].grid()
+    ax[0].axhline(0,linestyle='dashed',color='k')
+    ax[0].legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize='small')
+
     log_n_in_range,gradient_range=scaling_pattern_difference_analysis(merged,ax)
-    ax.plot(log_n_in_range,gradient_range,color='red', label='gradient range', linewidth=3, zorder=5, alpha=1.0)
-    ax.legend()
+    ax[1].plot(log_n_in_range,gradient_range,color='red', label='gradient range', linewidth=3, zorder=5, alpha=0.5)
+    ax[1].legend()
+    ax[1].set_xlabel('logged size of itegral slices')
+    ax[1].set_ylabel('range in scaling pattern difference')
+    ax[1].set_title('Range of scaling pattern')
+    ax[1].grid()
+
+    plt.tight_layout(pad=3.0)
+    plt.subplots_adjust(hspace=0.4)  # Optional fine-tuning
     plt.show()
     fig.savefig(f"{saving_path}/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-difference.png")
     plt.close()
@@ -1301,7 +1364,8 @@ def scaling_pattern_difference_analysis(df,ax):
     return log_n_avg,gradient_range
 
 
-     
+def avg_and_std_HRV():
+    pass
 
 
 def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,patient=True,DFA_on=True):
@@ -1324,32 +1388,39 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
         avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
 
     try:
-        mask1=np.where(avg_log_n1>0.55)
+        mask=np.where(avg_log_n1>0.55)
     except:
         print('total_on must be activated for PPG HRV data to be extracted')
         return np.nan,np.nan,np.nan,np.nan
-    mask2=np.where(avg_log_n2>0.55)
-    fig,ax=plt.subplots(figsize=(12, 8),layout='constrained')
-    if np.max(avg_gradient1[mask1])>2:
-        ax.set_ylim(0,np.max(avg_gradient1[mask1])+0.5)
-    elif np.max(avg_gradient2[mask2])>2:
-        ax.set_ylim(0,np.max(avg_gradient2[mask2])+0.5)
+    fig,ax=plt.subplots(2,1,figsize=(12, 8),layout='constrained')
+    if np.max(avg_gradient1[mask])>2:
+        ax[0].set_ylim(0,np.max(avg_gradient1[mask])+0.5)
+    elif np.max(avg_gradient2[mask])>2:
+        ax[0].set_ylim(0,np.max(avg_gradient2[mask])+0.5)
     else:
-        ax.set_ylim(0,2)
+        ax[0].set_ylim(0,2)
 
-    
-    ax.errorbar(avg_log_n1[mask1], avg_gradient1[mask1], yerr=std1[mask1], fmt='-', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
-    ax.errorbar(avg_log_n2[mask2], avg_gradient2[mask2], yerr=std2[mask2], fmt='-', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
-    
+    print('avg grad 1',avg_gradient1)
+    print('avg grad 2',avg_gradient2)
+    print('avg log 1',avg_log_n1)
+    print('avg log 2',avg_log_n2)
+    ax[0].errorbar(avg_log_n1[mask], avg_gradient1[mask], yerr=std1[mask], fmt='-', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
+    ax[0].errorbar(avg_log_n2[mask], avg_gradient2[mask], yerr=std2[mask], fmt='-', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
 
-    ax.axhline(1,linestyle='dashed',color='k')
-    ax.axhline(0.5,linestyle='dashed',color='k')
-    ax.axhline(1.5,linestyle='dashed',color='k')
-    ax.set_xlabel('logged size of integral slices')
-    ax.set_ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
-    ax.set_title(f'Average Scaling Pattern for {type1} and {type2}')
-    ax.legend()
-    ax.grid(zorder=0)
+    r,p=spearmanr(avg_gradient1[mask],avg_gradient2[mask])
+    print(f'spearman correlation coefficient={r}')
+    ax[0].axhline(1,linestyle='dashed',color='k')
+    ax[0].axhline(0.5,linestyle='dashed',color='k')
+    ax[0].axhline(1.5,linestyle='dashed',color='k')
+    ax[0].set_xlabel('logged size of integral slices')
+    ax[0].set_ylabel(f'Average gradient at each value of n - $\\overline{{m}}_e(n)$')
+    ax[0].set_title(f'Average Scaling Pattern for {type1} and {type2}')
+    ax[0].legend()
+    ax[0].grid(zorder=0)
+    ax[1].scatter(avg_gradient1[mask],avg_gradient2[mask])
+    ax[1].set_xlabel('PPG scaling pattern')
+    ax[1].set_ylabel('ECG scaling pattern')
+    ax[1].set_title('Correlation plot for scaling patterns')
     plt.show()
     fig.savefig(f"/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png")
     plt.close()
@@ -1360,7 +1431,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(False,False,False,False,False,True,True)
+    Flags=flags(False,False,False,False,True,True,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
@@ -1398,16 +1469,20 @@ def main():
                 'night_min':[],
                 'day_max':[],
                 'night_max':[],
-                'resting_hr':[]}
+                'resting_hr':[],
+                'avg_PPG_HRV_day':[],
+                'std_PPG_HRV_day':[],
+                'avg_PPG_HRV_night':[],
+                'std_PPG_HRV_night':[],
+                'ECG_HRV':[]}
     surrogate_dictionary={'Patient_num':[],
                           'Surrogate_data_linear':[],
                           'Surrogate_data_noise':[]}
     counter=0
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
-    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1752680318']
-
-    for i in range(2,50):
+    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549']
+    for i in range(5,6):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1423,7 +1498,7 @@ def main():
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=Flags.patient_analysis)
-            ECG_RR=ECG_HRV(ECG_RR,patientNum,saving_path)
+            ECG_RR=ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path)
             if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
                 # scaling_patterns_ECG.loc[i]=[[],[]]
@@ -1438,23 +1513,23 @@ def main():
             print(f"ECG error for patient {patientNum}: {e}")
             # traceback.print_exc()
             continue
-        try:
-            heartRateData_sorted=sortingHeartRate(patientNum,data_path,patient=Flags.patient_analysis)
-            RR=plotting(heartRateData_sorted,patientNum,data_path,saving_path,Flags,p=Flags.patient_analysis)
-            if RR['HRV'].size<1000:
-                print('not enough PPG data to perform DFA analysis')
-                # scaling_patterns_PPG.loc[i]=[[],[]]
-                H_hat=(np.nan,np.nan,np.nan)
-            else:
-                H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',saving_path,plot=Flags.plot_DFA)
-                scaling_pattern_PPG_rows.append({'patient_num':patientNum,
-                                                 'gradient':m,
-                                                 'log_n':log_n
+        # try:
+        heartRateData_sorted=sortingHeartRate(patientNum,data_path,patient=Flags.patient_analysis)
+        RR=plotting(heartRateData_sorted,patientNum,data_path,saving_path,Flags,p=Flags.patient_analysis)
+        if RR['HRV'].size<1000:
+            print('not enough PPG data to perform DFA analysis')
+            # scaling_patterns_PPG.loc[i]=[[],[]]
+            H_hat=(np.nan,np.nan,np.nan)
+        else:
+            H_hat,m,log_n=DFA_analysis(RR['HRV'],patientNum,'PPG',saving_path,plot=Flags.plot_DFA)
+            scaling_pattern_PPG_rows.append({'patient_num':patientNum,
+                                                'gradient':m,
+                                                'log_n':log_n
                 })
-        except Exception as e:
-            print(f"PPG error for patient {patientNum}: {e}")
-            #traceback.print_exc()
-            continue
+        # except Exception as e:
+        #     print(f"PPG error for patient {patientNum}: {e}")
+        #     #traceback.print_exc()
+        #     continue
         
         #surrogate_data=surrogate(RR[0])
 
