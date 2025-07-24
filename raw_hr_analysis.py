@@ -864,7 +864,6 @@ def databasing(metrics,Flags=None):
             avg_hrs=metrics['avg_hr_per_month'][idx]
             for month_id, avg_hr in zip(months,avg_hrs):
                 cur.execute("""INSERT OR IGNORE INTO Patient_to_Months(Patient_ID, Month, avg_HR) VALUES(?,?,?)""", (patient_id,month_id,avg_hr))
-                cur.execute("""""")
 
         #unique months in the metrics dictionary
         months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y'))
@@ -876,8 +875,17 @@ def databasing(metrics,Flags=None):
 
 
     if Flags.weeks:
+        cur.execute("CREATE TABLE Weeks(Week TEXT, PRIMARY KEY(Week))")
+        cur.execute("CREATE TABLE Patient_to_Weeks(Patient_ID TEXT, Week TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Week), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Week) REFERENCES Weeks(Week))")
+        for idx, patient_id in enumerate(metrics['Patient_num']):
+            weeks=metrics['weeks'][idx]
+            avg_hrs=metrics['avg_hr_per_week'][idx]
+            for week_id, avg_hr in zip(weeks,avg_hrs):
+                cur.execute("""INSERT OR IGNORE INTO Patient_to_Weeks(Patient_ID, Week, avg_HR) VALUES(?,?,?)""", (patient_id,week_id,avg_hr))
         weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
-        creating_or_updating_tables(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
+        for week in weeks:
+            cur.execute("""INSERT OR IGNORE INTO Weeks(Week) VALUES(?)""", (week,))
+        # creating_or_updating_tables(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
     if Flags.activities:
         activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
         creating_or_updating_tables(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
@@ -1452,7 +1460,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(True,False,False,True,False,False,True)
+    Flags=flags(True,True,False,True,False,False,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
