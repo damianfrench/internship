@@ -439,7 +439,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         night_vals=night_data[night_mask_i] # gets the heart rate data for nights
 
 
-        if len(night_vals)>0:
+        if len(night_vals)>3:
             min_indx=np.argmin(night_vals)
             resting_hr_val=np.inf
             for j in range(len(night_vals)):
@@ -452,7 +452,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
         else:
             resting_hr_val = np.nan
             HRV_night=np.nan
-
+        print(HRV_night)
         avg_HRV_night = np.mean(HRV_night) if len(night_vals) > 0 else np.nan
         std_HRV_night = np.std(HRV_night) if len(night_vals) > 0 else np.nan
 
@@ -461,6 +461,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
             'avg_PPG_HRV_night': avg_HRV_night,
             'std_PPG_HRV_night':std_HRV_night
         })
+        
         
         HRV_day=1/day_vals
         avg_HRV_day = np.mean(HRV_day) if len(day_vals) > 0 else np.nan
@@ -506,6 +507,7 @@ def resting_max_and_min(night_mask,day_mask,time_index,day_data,night_data,sleep
     night_df=pd.DataFrame(night_results)
     nights_HRV_df=pd.DataFrame(nights_HRV_info)
     night_df=pd.merge(night_df,nights_HRV_df,on='night_dates')
+    print(night_df)
 
 
     return day_df,night_df
@@ -849,12 +851,29 @@ def databasing(metrics,Flags=None):
     cur.execute("DROP TABLE IF EXISTS Patients")
     cur.execute("DROP TABLE IF EXISTS Days")
     cur.execute("DROP TABLE IF EXISTS Nights")
+    cur.execute("DROP TABLE IF EXISTS ECG")
+    cur.execute("DROP TABLE IF EXISTS Patient_to_Months")
 
     patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
-
+    
     if Flags.months:
-        months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y')) #unique months in the metrics dictionary
-        creating_or_updating_tables(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
+        cur.execute("CREATE TABLE Months(Month TEXT, PRIMARY KEY(Month))")
+        cur.execute("CREATE TABLE Patient_to_Months(Patient_ID TEXT, Month TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Month), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Month) REFERENCES Months(Month))")
+        for idx, patient_id in enumerate(metrics['Patient_num']):
+            months=metrics['months'][idx]
+            avg_hrs=metrics['avg_hr_per_month'][idx]
+            for month_id, avg_hr in zip(months,avg_hrs):
+                cur.execute("""INSERT OR IGNORE INTO Patient_to_Months(Patient_ID, Month, avg_HR) VALUES(?,?,?)""", (patient_id,month_id,avg_hr))
+                cur.execute("""""")
+
+        #unique months in the metrics dictionary
+        months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y'))
+        # creating_or_updating_tables(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
+
+        for month in months:
+            cur.execute("""INSERT OR IGNORE INTO Months(Month) VALUES(?)""", (month,))
+
+
 
     if Flags.weeks:
         weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
@@ -866,19 +885,24 @@ def databasing(metrics,Flags=None):
     if Flags.total:
         
     
-        cur.execute("CREATE TABLE Patients(Id INTEGER,Number TEXT,overall_hr_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Months(Number))")
+        cur.execute("CREATE TABLE Patients(Patient_ID TEXT,overall_HR_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Patient_ID))")
         for i in range(len(patient_num)):
-            cur.execute("INSERT INTO Patients(Number,overall_hr_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
+            cur.execute("INSERT INTO Patients(Patient_ID,overall_HR_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
         
     if Flags.day_night:
         # creates a table to store the rest of the patient data
-        cur.execute("CREATE TABLE Days(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, day_min FLOAT, day_max FLOAT,resting_hr FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
-        cur.execute("CREATE TABLE Nights(ID INTEGER, Number TEXT, date TEXT, night_avg FLOAT, night_min FLOAT, night_max FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+        cur.execute("CREATE TABLE Days(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, day_min FLOAT, day_max FLOAT,resting_hr FLOAT, avg_HRV_day FLOAT, std_HRV_day FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+        cur.execute("CREATE TABLE Nights(ID INTEGER, Number TEXT, date TEXT, night_avg FLOAT, night_min FLOAT, night_max FLOAT, avg_HRV_night FLOAT, std_HRV_night FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
+        cur.execute("CREATE TABLE ECG(Id INTEGER, Number TEXT, date TEXT, AVG_HRV FLOAT, STD_HRV FLOAT, PRIMARY KEY(Id AUTOINCREMENT) FOREIGN KEY(Number) REFERENCES Patients(Number))")
         for i in range(len(patient_num)):
             for j in range(len(metrics['day_dates'][i])):
-                cur.execute("""INSERT INTO Days(Number,date,day_avg,day_min,day_max,resting_hr) VALUES (?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['day_dates'][i][j],metrics['day_avg'][i][j],metrics['day_min'][i][j],metrics['day_max'][i][j],metrics['resting_hr'][i][j]))
+                cur.execute("""INSERT INTO Days(Number,date,day_avg,day_min,day_max,resting_hr,avg_HRV_day,std_HRV_day) VALUES (?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['day_dates'][i][j],metrics['day_avg'][i][j],metrics['day_min'][i][j],metrics['day_max'][i][j],metrics['resting_hr'][i][j],metrics['avg_PPG_HRV_day'][i][j],metrics['std_PPG_HRV_day'][i][j]))
             for j in range(len(metrics['night_dates'][i])):
-                cur.execute("""INSERT INTO Nights(Number,date,night_avg,night_min,night_max) VALUES (?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['night_dates'][i][j],metrics['night_avg'][i][j],metrics['night_min'][i][j],metrics['night_max'][i][j]))
+                cur.execute("""INSERT INTO Nights(Number,date,night_avg,night_min,night_max,avg_HRV_night,std_HRV_night) VALUES (?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['night_dates'][i][j],metrics['night_avg'][i][j],metrics['night_min'][i][j],metrics['night_max'][i][j],metrics['avg_PPG_HRV_night'][i][j],metrics['std_PPG_HRV_night'][i][j]))
+            for j,date in enumerate(metrics['ECG_dates_and_hours'][i]):
+                cur.execute("""INSERT INTO ECG(Number, date, AVG_HRV, STD_HRV) VALUES (?,?,?,?)""",(metrics['Patient_num'][i],date,metrics['avg_ECG_HRV'][i][j],metrics['std_ECG_HRV'][i][j]))
+
+    
     con.commit() # commits and closes the database
     con.close()
 
@@ -1042,7 +1066,7 @@ def appending_metrics(metrics_dict,fields,patientNum,data):
     return metrics_dict
 
 
-def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
+def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG,ECG_df):
     """
     Aggregates heart rate and DFA metrics for a given patient and appends them to the main metrics dictionary.
 
@@ -1093,6 +1117,7 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG):
     night_df=RR['nights']
     metrics=appending_metrics(metrics,['day_dates','day_avg','day_min','day_max','resting_hr','avg_PPG_HRV_day','std_PPG_HRV_day'],patientNum,day_df)
     metrics=appending_metrics(metrics,['night_dates','night_avg','night_min','night_max','avg_PPG_HRV_night','std_PPG_HRV_night'],patientNum,night_df)
+    metrics=appending_metrics(metrics,['ECG_dates_and_hours','avg_ECG_HRV','std_ECG_HRV'],patientNum,ECG_df)
 
 
     metrics['scaling_exponent_noise'].append(H_hat[0])
@@ -1223,14 +1248,15 @@ def plotting_scaling_pattern(log_n,log_f,patient_num,fig,ax,type,saving_path):
 
 
 def ECG_HRV_info(ECG_RR,ECG_R_times):
-    print(len(ECG_R_times),len(ECG_RR),'lengths')
     ECG_RR_data=[]    
     for i,RR in enumerate(ECG_RR.T):
+        date=pd.to_datetime(ECG_R_times[i],format='ISO8601',utc=True).strftime('%Y-%m-%d:%H')
         RR = RR[~np.isnan(RR)] # removes nans
         ECG_RR_data.append({'avg_ECG_HRV':np.mean(RR),
-                            'std_ECG_HRV':np.std(RR)})
+                            'std_ECG_HRV':np.std(RR),
+                            'ECG_dates_and_hours':date})
     ECG_RR_df=pd.DataFrame(ECG_RR_data)
-    print(ECG_RR_df)
+    return ECG_RR_df
 
 
 
@@ -1245,8 +1271,7 @@ def ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path):
     Returns:
         np.ndarray: Cleaned, flattened RR interval array.
     """
-    print(f'ECG_RR={ECG_RR}')
-    ECG_HRV_info(ECG_RR,ECG_R_times)
+    ECG_df=ECG_HRV_info(ECG_RR,ECG_R_times)
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
     fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constrained')
@@ -1264,8 +1289,7 @@ def ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path):
     Path(f"{saving_path}/heartRateRecord{patientNum}").mkdir(exist_ok=True) # creating new directory
     fig.savefig(f"{saving_path}/heartRateRecord{patientNum}/ECG_HRV.png")
     plt.close()
-    print(f'ECG_RR={ECG_RR}')
-    return ECG_RR # returns the RR intervals for the ECG data
+    return ECG_RR,ECG_df # returns the RR intervals for the ECG data
 
 def avg_scaling_pattern(scaling_patterns):
     """
@@ -1295,8 +1319,10 @@ def avg_scaling_pattern(scaling_patterns):
 
 
 def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type1,type2,saving_path,patient=True,DFA_on=True):
+    if not DFA_on:
+        print('DFA_on flag must be activated to plot the scaling pattern differences')
+        return 
     print(np.shape(len(scaling_patterns1['gradient'])))
-
     merged=pd.merge(scaling_patterns1,scaling_patterns2,on='patient_num',suffixes=('_1','_2'))
     merged['gradient_diff']=merged['gradient_1']-merged['gradient_2']
     merged['log_n_diff']=merged.apply(lambda row: (row['log_n_1']+row['log_n_2'])/2,axis=1)
@@ -1358,14 +1384,8 @@ def scaling_pattern_difference_analysis(df,ax):
     log_n_avg = np.mean(log_n_array, axis=0)
     gradient_range = np.max(gradient_array, axis=0) - np.min(gradient_array, axis=0)
 
-    print('log_n_array',log_n_avg)
-    print('gradient_range',gradient_range)
-
     return log_n_avg,gradient_range
 
-
-def avg_and_std_HRV():
-    pass
 
 
 def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,patient=True,DFA_on=True):
@@ -1380,12 +1400,13 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     Returns: 
         None
     """
-        
+    if not DFA_on:
+        print('DFA_on flag must be activated to plot the average scaling patterns')
+        return np.nan,np.nan,np.nan,np.nan   
     
     avg_gradient1, avg_log_n1, std1 = avg_scaling_pattern(scaling_patterns1)
     avg_gradient2, avg_log_n2, std2 = avg_scaling_pattern(scaling_patterns2)
-    if DFA_on==False:
-        avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
+    
 
     try:
         mask=np.where(avg_log_n1>0.55)
@@ -1431,7 +1452,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(False,False,False,False,True,True,True)
+    Flags=flags(True,False,False,True,False,False,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
@@ -1474,15 +1495,17 @@ def main():
                 'std_PPG_HRV_day':[],
                 'avg_PPG_HRV_night':[],
                 'std_PPG_HRV_night':[],
-                'ECG_HRV':[]}
+                'ECG_dates_and_hours':[],
+                'avg_ECG_HRV':[],
+                'std_ECG_HRV':[]}
     surrogate_dictionary={'Patient_num':[],
                           'Surrogate_data_linear':[],
                           'Surrogate_data_noise':[]}
     counter=0
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
-    volunteer_nums=['data_001_1636025623','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549']
-    for i in range(5,6):
+    volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549']
+    for i in range(5,13):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1498,7 +1521,7 @@ def main():
 
         try:
             ECG_RR,ECG_R_times=patient_output(patientNum,patient=Flags.patient_analysis)
-            ECG_RR=ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path)
+            ECG_RR,ECG_df=ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path)
             if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
                 # scaling_patterns_ECG.loc[i]=[[],[]]
@@ -1533,18 +1556,19 @@ def main():
         
         #surrogate_data=surrogate(RR[0])
 
-        
-        
+
+        print(ECG_df)
 
         
         
-        metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG)
+        metrics=adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG,ECG_df)
     scaling_patterns_ECG=pd.DataFrame(scaling_pattern_ECG_rows)
     scaling_patterns_PPG=pd.DataFrame(scaling_pattern_PPG_rows)
     plotting_scaling_pattern_difference(scaling_patterns_ECG,scaling_patterns_PPG,'ECG','PPG',saving_path,Flags.patient_analysis,Flags.plot_DFA)
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
+    print(metrics)
     databasing(metrics,Flags)
     
 
