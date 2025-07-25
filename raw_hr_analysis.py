@@ -115,7 +115,9 @@ def split_on_dash(data):
     return np.vstack(np.char.split(data,'-'))
 
 def split_on_colon(data):
-    return np.vstack(np.char.split(data,':'))
+    data = np.array(data, dtype=str)
+    return np.char.partition(data, ':')[:, [0, 2]]
+        
 
 def only_yearAndmonth(data):
     return np.vstack(np.array([d[:7] for d in data]))
@@ -802,6 +804,25 @@ def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True):
     H_hat=(m1,m2 ,cross_point) # returns the scaling exponents and crossover point for PPG data
     return H_hat,m,logn
 
+def setup_schema(cur):
+    tables=['Months','Weeks','Activities','Patients','Months_HR','Weeks_HR','Dates','Daily_Vitals','Night_Vitals','ECG_Vitals']
+
+    for table in tables:
+        cur.execute(f"DROP TABLE IF EXISTS {table}")
+
+
+    cur.execute("CREATE TABLE Months(Month TEXT, PRIMARY KEY(Month))")
+    cur.execute("CREATE TABLE Months_HR(Patient_ID TEXT, Month TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Month), UNIQUE(Patient_ID, Month), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Month) REFERENCES Months(Month))")
+    cur.execute("CREATE TABLE Weeks(Week TEXT, PRIMARY KEY(Week))")
+    cur.execute("CREATE TABLE Weeks_HR(Patient_ID TEXT, Week TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Week),UNIQUE(Patient_ID, Week), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Week) REFERENCES Weeks(Week))")    
+    cur.execute("CREATE TABLE Dates(Date TEXT, PRIMARY KEY(Date))")
+    cur.execute("CREATE TABLE Daily_Vitals(Date_Vitals Integer, Patient_ID TEXT, Date TEXT, Day_avg_HR FLOAT, Day_min_HR FLOAT, Day_max_HR FLOAT, Resting_HR FLOAT, Avg_PPG_HRV_Day FLOAT, Std_PPG_HRV_Day FLOAT,UNIQUE(Patient_ID, Date), PRIMARY KEY(Date_Vitals AUTOINCREMENT), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Date) REFERENCES Dates(Date))")
+    cur.execute("CREATE TABLE Activities(Date_Vitals Integer, Avg_Active_HR FLOAT, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
+    cur.execute("CREATE TABLE Night_Vitals(Date_Vitals Integer, Night_avg_HR FLOAT, Night_min_HR FLOAT, Night_max_HR FLOAT, Avg_PPG_HRV_Night FLOAT, Std_PPG_HRV_Night, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
+    cur.execute("CREATE TABLE ECG_Vitals(Date_Plus_Hour TEXT, Avg_ECG_HRV FLOAT, Std_ECG_HRV FLOAT, Date_Vitals Integer, PRIMARY KEY(Date_Plus_Hour), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
+
+
+
 
 def databasing(metrics,Flags=None):
     """
@@ -845,72 +866,95 @@ def databasing(metrics,Flags=None):
     db_name = 'patient_metrics.db' if Flags.patient_analysis else 'volunteer_metrics.db'
     con = sqlite3.connect(db_name)
     cur = con.cursor()
-    cur.execute("DROP TABLE IF EXISTS Months")
-    cur.execute("DROP TABLE IF EXISTS Weeks")
-    cur.execute("DROP TABLE IF EXISTS Active")
-    cur.execute("DROP TABLE IF EXISTS Patients")
-    cur.execute("DROP TABLE IF EXISTS Days")
-    cur.execute("DROP TABLE IF EXISTS Nights")
-    cur.execute("DROP TABLE IF EXISTS ECG")
-    cur.execute("DROP TABLE IF EXISTS Patient_to_Months")
-
+    setup_schema(cur)
     patient_num=metrics['Patient_num'] # gets the patient number from the metrics dictionary
-    
-    if Flags.months:
-        cur.execute("CREATE TABLE Months(Month TEXT, PRIMARY KEY(Month))")
-        cur.execute("CREATE TABLE Patient_to_Months(Patient_ID TEXT, Month TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Month), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Month) REFERENCES Months(Month))")
-        for idx, patient_id in enumerate(metrics['Patient_num']):
+
+    cur.execute("CREATE TABLE Patients(Patient_ID TEXT,overall_HR_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Patient_ID))")
+    for i in range(len(patient_num)):
+        cur.execute("INSERT INTO Patients(Patient_ID,overall_HR_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
+
+
+    for idx, patient_id in enumerate(metrics['Patient_num']):
+        if Flags.months:
             months=metrics['months'][idx]
             avg_hrs=metrics['avg_hr_per_month'][idx]
             for month_id, avg_hr in zip(months,avg_hrs):
-                cur.execute("""INSERT OR IGNORE INTO Patient_to_Months(Patient_ID, Month, avg_HR) VALUES(?,?,?)""", (patient_id,month_id,avg_hr))
-
-        #unique months in the metrics dictionary
-        months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y'))
-        # creating_or_updating_tables(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
-
-        for month in months:
-            cur.execute("""INSERT OR IGNORE INTO Months(Month) VALUES(?)""", (month,))
-
-
-
-    if Flags.weeks:
-        cur.execute("CREATE TABLE Weeks(Week TEXT, PRIMARY KEY(Week))")
-        cur.execute("CREATE TABLE Patient_to_Weeks(Patient_ID TEXT, Week TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Week), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Week) REFERENCES Weeks(Week))")
-        for idx, patient_id in enumerate(metrics['Patient_num']):
+                cur.execute("""INSERT OR IGNORE INTO Months_HR(Patient_ID, Month, avg_HR) VALUES(?,?,?)""", (patient_id,month_id,avg_hr))
+        if Flags.weeks:
             weeks=metrics['weeks'][idx]
             avg_hrs=metrics['avg_hr_per_week'][idx]
             for week_id, avg_hr in zip(weeks,avg_hrs):
-                cur.execute("""INSERT OR IGNORE INTO Patient_to_Weeks(Patient_ID, Week, avg_HR) VALUES(?,?,?)""", (patient_id,week_id,avg_hr))
-        weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
-        for week in weeks:
-            cur.execute("""INSERT OR IGNORE INTO Weeks(Week) VALUES(?)""", (week,))
-        # creating_or_updating_tables(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
-    if Flags.activities:
-        activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
-        creating_or_updating_tables(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
-    
-    if Flags.total:
+                cur.execute("""INSERT OR IGNORE INTO Weeks_HR(Patient_ID, Week, avg_HR) VALUES(?,?,?)""", (patient_id,week_id,avg_hr))
         
-    
-        cur.execute("CREATE TABLE Patients(Patient_ID TEXT,overall_HR_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Patient_ID))")
-        for i in range(len(patient_num)):
-            cur.execute("INSERT INTO Patients(Patient_ID,overall_HR_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?)",(metrics['Patient_num'][i],metrics['avg_hr_overall'][i],metrics['scaling_exponent_noise'][i],metrics['scaling_exponent_linear'][i],metrics['ECG_scaling_exponent_noise'][i],metrics['ECG_scaling_exponent_linear'][i],metrics['crossover_PPG'][i],metrics['crossover_ECG'][i]))
+        dates=metrics['day_dates'][idx]
+        print('day dates',dates)
+        day_avg_hrs=metrics['day_avg'][idx]
+        day_min_hrs=metrics['day_min'][idx]
+        day_max_hrs=metrics['day_max'][idx]
+        resting_hrs=metrics['resting_hr'][idx]
+        avg_PPG_HRV_Days=metrics['avg_PPG_HRV_day'][idx]
+        std_PPG_HRV_Days=metrics['std_PPG_HRV_day'][idx]
         
-    if Flags.day_night:
-        # creates a table to store the rest of the patient data
-        cur.execute("CREATE TABLE Days(Id INTEGER, Number TEXT, date TEXT, day_avg FLOAT, day_min FLOAT, day_max FLOAT,resting_hr FLOAT, avg_HRV_day FLOAT, std_HRV_day FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
-        cur.execute("CREATE TABLE Nights(ID INTEGER, Number TEXT, date TEXT, night_avg FLOAT, night_min FLOAT, night_max FLOAT, avg_HRV_night FLOAT, std_HRV_night FLOAT, PRIMARY KEY(Id AUTOINCREMENT), FOREIGN KEY(Number) REFERENCES Patients(Number))")
-        cur.execute("CREATE TABLE ECG(Id INTEGER, Number TEXT, date TEXT, AVG_HRV FLOAT, STD_HRV FLOAT, PRIMARY KEY(Id AUTOINCREMENT) FOREIGN KEY(Number) REFERENCES Patients(Number))")
-        for i in range(len(patient_num)):
-            for j in range(len(metrics['day_dates'][i])):
-                cur.execute("""INSERT INTO Days(Number,date,day_avg,day_min,day_max,resting_hr,avg_HRV_day,std_HRV_day) VALUES (?,?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['day_dates'][i][j],metrics['day_avg'][i][j],metrics['day_min'][i][j],metrics['day_max'][i][j],metrics['resting_hr'][i][j],metrics['avg_PPG_HRV_day'][i][j],metrics['std_PPG_HRV_day'][i][j]))
-            for j in range(len(metrics['night_dates'][i])):
-                cur.execute("""INSERT INTO Nights(Number,date,night_avg,night_min,night_max,avg_HRV_night,std_HRV_night) VALUES (?,?,?,?,?,?,?)""",(metrics['Patient_num'][i],metrics['night_dates'][i][j],metrics['night_avg'][i][j],metrics['night_min'][i][j],metrics['night_max'][i][j],metrics['avg_PPG_HRV_night'][i][j],metrics['std_PPG_HRV_night'][i][j]))
-            for j,date in enumerate(metrics['ECG_dates_and_hours'][i]):
-                cur.execute("""INSERT INTO ECG(Number, date, AVG_HRV, STD_HRV) VALUES (?,?,?,?)""",(metrics['Patient_num'][i],date,metrics['avg_ECG_HRV'][i][j],metrics['std_ECG_HRV'][i][j]))
 
+        for date_id,day_avg_hr,day_min_hr,day_max_hr,resting_hr,avg_PPG_HRV_Day,std_PPG_HRV_Day in zip(dates,day_avg_hrs,day_min_hrs,day_max_hrs,resting_hrs,avg_PPG_HRV_Days,std_PPG_HRV_Days):
+            cur.execute("""INSERT OR IGNORE INTO Daily_Vitals(Patient_ID, Date, Day_avg_HR, Day_min_HR, Day_max_HR, Resting_HR, Avg_PPG_HRV_Day, Std_PPG_HRV_Day) VALUES(?,?,?,?,?,?,?,?)""", (patient_id,date_id,day_avg_hr,day_min_hr,day_max_hr,resting_hr,avg_PPG_HRV_Day, std_PPG_HRV_Day))
+        
+        avg_active_hrs=metrics['avg_hr_active'][idx]
+        active_dates=metrics['activities'][idx]   
+        
+        for avg_active_hr,active_date in zip(avg_active_hrs,active_dates):
+            date_vitals_id=cur.execute("""SELECT Date_Vitals FROM Daily_Vitals WHERE Patient_ID=? AND Date=?""",(patient_id,active_date)).fetchone()
+            if date_vitals_id:
+                cur.execute("""INSERT OR IGNORE INTO Activities(Date_Vitals, Avg_Active_HR) VALUES(?,?)""", (date_vitals_id[0],avg_active_hr))
+        
+        night_dates=metrics['night_dates'][idx]
+        night_avg_hrs=metrics['night_avg'][idx]
+        night_min_hrs=metrics['night_min'][idx]
+        night_max_hrs=metrics['night_max'][idx]
+        avg_PPG_HRV_Nights=metrics['avg_PPG_HRV_night'][idx]
+        std_PPG_HRV_Nights=metrics['std_PPG_HRV_night'][idx]
+        for night_date,night_avg_hr,night_min_hr,night_max_hr,avg_PPG_HRV_Night,std_PPG_HRV_Night in zip(night_dates,night_avg_hrs,night_min_hrs,night_max_hrs,avg_PPG_HRV_Nights,std_PPG_HRV_Nights):
+            date_vitals_id=cur.execute("""SELECT Date_Vitals FROM Daily_Vitals WHERE Patient_ID=? AND Date=?""",(patient_id,night_date)).fetchone()
+            if date_vitals_id:
+                cur.execute("""INSERT OR IGNORE INTO Night_vitals(Date_Vitals,Night_avg_HR, Night_min_HR, Night_max_HR, Avg_PPG_HRV_Night,Std_PPG_HRV_Night) VALUES(?,?,?,?,?,?)""",(date_vitals_id[0],night_avg_hr,night_min_hr,night_max_hr,avg_PPG_HRV_Night,std_PPG_HRV_Night))
+        
+        dates_plus_hours=metrics['ECG_dates_and_hours'][idx]
+        avg_ECG_HRVs=metrics['avg_ECG_HRV'][idx]
+        std_ECG_HRVs=metrics['std_ECG_HRV'][idx]
+        
+
+        for date_plus_hour,avg_ECG_HRV,std_ECG_HRV in zip(split_on_colon(dates_plus_hours),avg_ECG_HRVs,std_ECG_HRVs):
+            
+            date_vitals_id=cur.execute("""SELECT Date_Vitals FROM Daily_Vitals WHERE Patient_ID=? AND Date=?""",(patient_id,date_plus_hour[0])).fetchone()
+            if date_vitals_id:
+                date_with_hour=':'.join(date_plus_hour)
+                cur.execute("""INSERT OR IGNORE INTO ECG_Vitals(Date_Plus_Hour, Avg_ECG_HRV, Std_ECG_HRV, Date_Vitals) VALUES(?,?,?,?)""",(date_with_hour, avg_ECG_HRV, std_ECG_HRV, date_vitals_id[0]))
+            
+            # creating_or_updating_tables(con, 'Active', activities, patient_num, metrics['avg_hr_active'],metrics['activities']) # creates or updates the Active table with the average heart rate for each activity
+     #unique months in the metrics dictionary
+    months=sorted(np.unique(np.concatenate(metrics['months'])),key=lambda x: datetime.strptime(x, '%b %Y'))
+    # creating_or_updating_tables(con, 'Months', months, patient_num, metrics['avg_hr_per_month'],metrics['months']) # creates or updates the Months table with the average heart rate per month
+
+    for month in months:
+        cur.execute("""INSERT OR IGNORE INTO Months(Month) VALUES(?)""", (month,))
+
+    weeks=sorted(np.unique(np.concatenate(metrics['weeks'])),key=lambda x: datetime.strptime(x, '%Y-W%W')) #unique weeks in the metrics dictionary
+    for week in weeks:
+        cur.execute("""INSERT OR IGNORE INTO Weeks(Week) VALUES(?)""", (week,))
+    # creating_or_updating_tables(con, 'Weeks', weeks, patient_num, metrics['avg_hr_per_week'],metrics['weeks']) # creates or updates the Weeks table with the average heart rate per week
+
+    dates=sorted(np.unique(np.concatenate(metrics['day_dates'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d'))
+    for date in dates:
+        cur.execute("""INSERT OR IGNORE INTO Dates(Date) VALUES(?)""",(date,))
     
+    # activities=sorted(np.unique(np.concatenate(metrics['activities'])),key=lambda x: datetime.strptime(x, '%Y-%m-%d')) #unique activities in the metrics dictionary
+    # for activity in activities:
+    #     cur.execute("""INSERT OR IGNORE INTO Activities()""")
+
+
+
+
+            
     con.commit() # commits and closes the database
     con.close()
 
@@ -1460,7 +1504,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(True,True,False,True,False,False,True)
+    Flags=flags(True,True,True,True,True,False,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
         Flags=flags._make(iterable)
@@ -1513,7 +1557,7 @@ def main():
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
     volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549']
-    for i in range(5,13):
+    for i in range(5,10):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
