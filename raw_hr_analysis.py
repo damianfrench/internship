@@ -18,6 +18,7 @@ import traceback
 from collections import namedtuple
 from matplotlib import colormaps
 import statsmodels.api as sm
+import pyhrv.nonlinear as nl
 
 sys.path.append('/data/t/smartWatch/patients/completeData')
 from patient_analysis3 import patient_output
@@ -620,6 +621,7 @@ def plotting(data,number,data_path,saving_path,Flags=None):
     avg_hr_active_day,activities=active_days_calc(data,number,Flags.patient_analysis,data_path,saving_path,Flags.activities)
     time_y=total_timespan(data,number,saving_path,Flags.total)
     day_df,night_df=days_and_nights(data,number,Flags.patient_analysis,data_path,saving_path,Flags.day_night)
+    poincare_plot(1/time_y)
     return {"HRV":1/time_y,
             "avg_hr_per_month":avg_hr_months,
             "avg_hr_overall":np.average(time_y),
@@ -630,6 +632,12 @@ def plotting(data,number,data_path,saving_path,Flags=None):
             "activities":activities,
             "resting_and_days":day_df,
             "nights":night_df}
+
+
+def poincare_plot(RR_interval):
+    R_peaks=np.insert(np.cumsum(RR_interval),0,0)
+    result=nl.poincare(rpeaks=R_peaks)
+
 
 def circular_mean(df,key_from,key_to,first=True):
     """
@@ -763,6 +771,9 @@ def DFA(RR):
         F_s (np.ndarray): The root-mean-square fluctuation for each window size.
         window_sizes (np.ndarray): The array of window sizes used in the DFA.
     """
+
+    R_peaks=np.insert(np.cumsum(RR),0,0)
+    nl.dfa(rpeaks=R_peaks)
     window_sizes=np.unique(np.logspace(0.5, np.log10(len(RR)), 100).astype(int)) # produces an array of varying window sizes scaled for logspace
 
     y=np.cumsum(RR - np.mean(RR)) # produces an inegration curve of each point - average
@@ -1108,7 +1119,8 @@ def DFA_plot(params,log_n,log_F,H_hat1,H_hat2,patientNum,type,plot):
     ax[0].plot(log_n[np.where(log_n<cross_point)],regression_line_1,color='red')
     regression_line_2=log_n[np.where(log_n>=cross_point)]*H_hat2[0]+H_hat2[1]
     ax[0].plot(log_n[np.where(log_n>=cross_point)],regression_line_2,color='blue')
-    plt.axvline(log_n[cross_indx], color='r', linestyle='--')
+    ax[0].axvline(log_n[cross_indx], color='r', linestyle='--')
+
     
     return ax[1],fig
 
@@ -1371,9 +1383,17 @@ def ECG_HRV_info(ECG_RR,ECG_R_times):
     ECG_RR_df=pd.DataFrame(ECG_RR_data)
     return ECG_RR_df
 
+def poincare_plot_analysis(R_peaks):
+    for i,peaks in enumerate(R_peaks.T):
+        peaks=peaks[~np.isnan(peaks)]
+        print(peaks)
+        try:
+            result=nl.poincare(rpeaks=peaks)
+        except:
+            pass
 
 
-def ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path):
+def ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path):
     """
     Processes and visualizes ECG-based RR interval data, before and after outlier removal.
 
@@ -1385,6 +1405,7 @@ def ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path):
     Returns:
         np.ndarray: Cleaned, flattened RR interval array.
     """
+    poincare_plot_analysis(ECG_R_peaks)
     ECG_df=ECG_HRV_info(ECG_RR,ECG_R_times)
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
@@ -1658,7 +1679,7 @@ def main():
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
     volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549','data_DAM_1752828759']
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1673,8 +1694,8 @@ def main():
             break
         print(patientNum)
         try:
-            ECG_RR,ECG_R_times=patient_output(patientNum,patient=Flags.patient_analysis)
-            ECG_RR,ECG_df=ECG_HRV(ECG_RR,ECG_R_times,patientNum,saving_path)
+            ECG_RR,ECG_R_times,ECG_R_peaks=patient_output(patientNum,patient=Flags.patient_analysis)
+            ECG_RR,ECG_df=ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path)
             if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
                 # scaling_patterns_ECG.loc[i]=[[],[]]
@@ -1688,7 +1709,7 @@ def main():
         except Exception as e:
             print(f"ECG error for patient {patientNum}: {e}")
             print(ECG_RR)
-            # traceback.print_exc()
+            traceback.print_exc()
             H_hat_ECG=(np.nan,np.nan,np.nan)
             ECG_df=pd.DataFrame()
             pass
@@ -1723,7 +1744,7 @@ def main():
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    databasing(metrics,Flags.patient_analysis)
+    #databasing(metrics,Flags.patient_analysis)
     
 
 if __name__=="__main__":
