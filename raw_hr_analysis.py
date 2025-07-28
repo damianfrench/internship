@@ -621,7 +621,7 @@ def plotting(data,number,data_path,saving_path,Flags=None):
     avg_hr_active_day,activities=active_days_calc(data,number,Flags.patient_analysis,data_path,saving_path,Flags.activities)
     time_y=total_timespan(data,number,saving_path,Flags.total)
     day_df,night_df=days_and_nights(data,number,Flags.patient_analysis,data_path,saving_path,Flags.day_night)
-    poincare_plot(1/time_y)
+    poincare_df=pd.DataFrame([poincare_plot(1/time_y,input_type='PPG',patient_number=number,plot_on=Flags.poincare_plot_on)])
     return {"HRV":1/time_y,
             "avg_hr_per_month":avg_hr_months,
             "avg_hr_overall":np.average(time_y),
@@ -631,12 +631,32 @@ def plotting(data,number,data_path,saving_path,Flags=None):
             "weeks":weeks,
             "activities":activities,
             "resting_and_days":day_df,
-            "nights":night_df}
+            "nights":night_df,
+            'poincare':poincare_df}
 
 
-def poincare_plot(RR_interval):
-    R_peaks=np.insert(np.cumsum(RR_interval),0,0)
-    result=nl.poincare(rpeaks=R_peaks)
+def poincare_plot(RR_interval,input_type='',patient_number=None,plot_on=True):
+    result=nl.poincare(nni=RR_interval,mode='normal' if plot_on else 'dev')
+    print(result)
+    if plot_on:
+        fig=result['poincare_plot']
+        ax=fig.axes[0]
+        ax.set_title(f'poincare plot for patient {patient_number} {input_type}')
+        ax.set_xlabel('$RRI_{i}$ [ms]')
+        ax.set_ylabel('$RRI_{i+1}$ [ms]')
+        fig, sd1, sd2, sd_ratio, area = result
+    else:
+        sd1, sd2, sd_ratio, area = result
+
+    dic = {
+        f'{input_type}_sd1': float(sd1),
+        f'{input_type}_sd2': float(sd2),
+        f'{input_type}_sd_ratio': float(sd_ratio),
+        f'{input_type}_ellipse_area':float(area)
+    }
+    return dic
+   
+    # plt.show()
 
 
 def circular_mean(df,key_from,key_to,first=True):
@@ -772,8 +792,6 @@ def DFA(RR):
         window_sizes (np.ndarray): The array of window sizes used in the DFA.
     """
 
-    R_peaks=np.insert(np.cumsum(RR),0,0)
-    nl.dfa(rpeaks=R_peaks)
     window_sizes=np.unique(np.logspace(0.5, np.log10(len(RR)), 100).astype(int)) # produces an array of varying window sizes scaled for logspace
 
     y=np.cumsum(RR - np.mean(RR)) # produces an inegration curve of each point - average
@@ -824,12 +842,12 @@ def creating_or_updating_tables(con,table_name,columns,patient_num,value_matrix,
             except:
                 cur.execute(f"UPDATE {table_name} SET '{key}' = ? WHERE Number = ?",(value_matrix[i][j],patient_num[i])) # updates the subsequent values in the table
 
-def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True):
+def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True,R_peaks=None):
     """
     Performs DFA analysis with crossover detection on RR intervals.
 
     Parameters:
-        RR (np.ndarray): RR interval time series.
+        RR (np.ndarray): RR interval time series in seconds.
         patientNum (str or int): Identifier for patient/subject.
         data_type (str): Label used for file naming and plot titles.
         plot (bool): Whether to generate and save the plot.
@@ -839,7 +857,9 @@ def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True):
         m (np.ndarray): Continuous slope estimates (from alpha-beta filter)
         logn (np.ndarray): Corresponding log(n) values
     """
-    
+    if RR.max()>3:
+        RR=RR/1000
+    RR=(RR-np.mean(RR))/np.std(RR)
     F_s,window_sizes=DFA(RR) # performs DFA on the data
     log_n=np.log10(window_sizes)
     log_F=np.log10(F_s)
@@ -847,6 +867,7 @@ def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True):
     cross_point=log_n[params[0]] # gets the crossover point from the params
     m1=params[1]
     m2=params[2]
+
     H_hat1 = np.polyfit(log_n[np.where(log_n<cross_point)],log_F[np.where(log_n<cross_point)],1,cov=False) # fits linear curve to the first section of the DFA plot
     
     H_hat2 = np.polyfit(log_n[np.where(log_n>=cross_point)],log_F[np.where(log_n>=cross_point)],1,cov=False) # fits linear curve to the second section of the DFA plot
@@ -872,7 +893,7 @@ def setup_schema(cur):
     for table in tables:
         cur.execute(f"DROP TABLE IF EXISTS {table}")
 
-    cur.execute("CREATE TABLE Patients(Patient_ID TEXT,overall_HR_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT, PRIMARY KEY(Patient_ID))")
+    cur.execute("CREATE TABLE Patients(Patient_ID TEXT,overall_HR_avg FLOAT,scaling_exponent_noise FLOAT,scaling_exponent_linear FLOAT, ECG_scaling_exponent_noise FLOAT, ECG_scaling_exponent_linear FLOAT,crossover_PPG FLOAT, crossover_ECG FLOAT,sd1 FLOAT, sd2 FLOAT, sd_ratio FLOAT, ellipse_area FLOAT, PRIMARY KEY(Patient_ID))")
     cur.execute("CREATE TABLE Months(Month TEXT, PRIMARY KEY(Month))")
     cur.execute("CREATE TABLE Months_HR(Patient_ID TEXT, Month TEXT, avg_HR FLOAT, PRIMARY KEY(Patient_ID, Month), UNIQUE(Patient_ID, Month), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Month) REFERENCES Months(Month))")
     cur.execute("CREATE TABLE Weeks(Week TEXT, PRIMARY KEY(Week))")
@@ -881,7 +902,7 @@ def setup_schema(cur):
     cur.execute("CREATE TABLE Daily_Vitals(Date_Vitals Integer, Patient_ID TEXT, Date TEXT, Day_avg_HR FLOAT, Day_min_HR FLOAT, Day_max_HR FLOAT, Resting_HR FLOAT, Avg_PPG_HRV_Day FLOAT, Std_PPG_HRV_Day FLOAT,UNIQUE(Patient_ID, Date), PRIMARY KEY(Date_Vitals AUTOINCREMENT), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Date) REFERENCES Dates(Date))")
     cur.execute("CREATE TABLE Activities(Date_Vitals Integer, Avg_Active_HR FLOAT, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
     cur.execute("CREATE TABLE Night_Vitals(Date_Vitals Integer, Night_avg_HR FLOAT, Night_min_HR FLOAT, Night_max_HR FLOAT, Avg_PPG_HRV_Night FLOAT, Std_PPG_HRV_Night, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
-    cur.execute("CREATE TABLE ECG_Vitals(Date_Plus_Hour TEXT, Avg_ECG_HRV FLOAT, Std_ECG_HRV FLOAT, Date_Vitals Integer, PRIMARY KEY(Date_Plus_Hour), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
+    cur.execute("CREATE TABLE ECG_Vitals(Date_Plus_Hour TEXT, Avg_ECG_HRV FLOAT, Std_ECG_HRV FLOAT,sd1 FLOAT, sd2 FLOAT, sd_Ratio FLOAT, ellipse_area FLOAT, Date_Vitals Integer, PRIMARY KEY(Date_Plus_Hour), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
 
 
 
@@ -920,7 +941,7 @@ def databasing(metrics,Flag=True):
 
         
     for idx, patient_id in enumerate(metrics['Patient_num']):
-        cur.execute("INSERT INTO Patients(Patient_ID,overall_HR_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG) VALUES (?,?,?,?,?,?,?,?)",(metrics['Patient_num'][idx],metrics['avg_hr_overall'][idx],metrics['scaling_exponent_noise'][idx],metrics['scaling_exponent_linear'][idx],metrics['ECG_scaling_exponent_noise'][idx],metrics['ECG_scaling_exponent_linear'][idx],metrics['crossover_PPG'][idx],metrics['crossover_ECG'][idx]))
+        cur.execute("INSERT INTO Patients(Patient_ID,overall_HR_avg,scaling_exponent_noise,scaling_exponent_linear,ECG_scaling_exponent_noise,ECG_scaling_exponent_linear,crossover_PPG,crossover_ECG,sd1,sd2,sd_ratio,ellipse_area) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",(metrics['Patient_num'][idx],metrics['avg_hr_overall'][idx],metrics['scaling_exponent_noise'][idx],metrics['scaling_exponent_linear'][idx],metrics['ECG_scaling_exponent_noise'][idx],metrics['ECG_scaling_exponent_linear'][idx],metrics['crossover_PPG'][idx],metrics['crossover_ECG'][idx],float(metrics['PPG_sd1'][idx]),float(metrics['PPG_sd2'][idx]),float(metrics['PPG_sd_ratio'][idx]),float(metrics['PPG_ellipse_area'][idx])))
 
         try:
 
@@ -982,12 +1003,16 @@ def databasing(metrics,Flag=True):
             dates_plus_hours=metrics['ECG_dates_and_hours'][idx]
             avg_ECG_HRVs=metrics['avg_ECG_HRV'][idx]
             std_ECG_HRVs=metrics['std_ECG_HRV'][idx]
-            for date_plus_hour,avg_ECG_HRV,std_ECG_HRV in zip(split_on_colon(dates_plus_hours),avg_ECG_HRVs,std_ECG_HRVs):
+            sd1s=metrics['ECG_sd1'][idx]
+            sd2s=metrics['ECG_sd2'][idx]
+            sd_ratios=metrics['ECG_sd_ratio'][idx]
+            ellipse_areas=metrics['ECG_ellipse_area'][idx]
+            for date_plus_hour,avg_ECG_HRV,std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area in zip(split_on_colon(dates_plus_hours),avg_ECG_HRVs,std_ECG_HRVs,sd1s,sd2s,sd_ratios,ellipse_areas):
                 
                 date_vitals_id=cur.execute("""SELECT Date_Vitals FROM Daily_Vitals WHERE Patient_ID=? AND Date=?""",(patient_id,date_plus_hour[0])).fetchone()
                 if date_vitals_id:
                     date_with_hour=':'.join(date_plus_hour)
-                    cur.execute("""INSERT OR IGNORE INTO ECG_Vitals(Date_Plus_Hour, Avg_ECG_HRV, Std_ECG_HRV, Date_Vitals) VALUES(?,?,?,?)""",(date_with_hour, avg_ECG_HRV, std_ECG_HRV, date_vitals_id[0]))
+                    cur.execute("""INSERT OR IGNORE INTO ECG_Vitals(Date_Plus_Hour, Avg_ECG_HRV, Std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area, Date_Vitals) VALUES(?,?,?,?,?,?,?,?)""",(date_with_hour, avg_ECG_HRV, std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area, date_vitals_id[0]))
         
         except Exception as e:
             print(f'error occured with: {e}')
@@ -1228,9 +1253,11 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG,ECG_df):
     metrics=appending_metrics(metrics,['avg_hr_per_week','avg_hr_per_month','avg_hr_overall','avg_hr_active','months','weeks','activities'],patientNum,RR)
     day_df=RR['resting_and_days']
     night_df=RR['nights']
+    poincare_df=RR['poincare']
     metrics=appending_metrics(metrics,['day_dates','day_avg','day_min','day_max','resting_hr','avg_PPG_HRV_day','std_PPG_HRV_day'],patientNum,day_df)
     metrics=appending_metrics(metrics,['night_dates','night_avg','night_min','night_max','avg_PPG_HRV_night','std_PPG_HRV_night'],patientNum,night_df)
-    metrics=appending_metrics(metrics,['ECG_dates_and_hours','avg_ECG_HRV','std_ECG_HRV'],patientNum,ECG_df)
+    metrics=appending_metrics(metrics,['PPG_sd1','PPG_sd2','PPG_sd_ratio','PPG_ellipse_area'],patientNum,poincare_df)
+    metrics=appending_metrics(metrics,['ECG_dates_and_hours','avg_ECG_HRV','std_ECG_HRV','ECG_sd1','ECG_sd2','ECG_sd_ratio','ECG_ellipse_area'],patientNum,ECG_df)
 
 
     metrics['scaling_exponent_noise'].append(H_hat[0])
@@ -1383,17 +1410,19 @@ def ECG_HRV_info(ECG_RR,ECG_R_times):
     ECG_RR_df=pd.DataFrame(ECG_RR_data)
     return ECG_RR_df
 
-def poincare_plot_analysis(R_peaks):
-    for i,peaks in enumerate(R_peaks.T):
-        peaks=peaks[~np.isnan(peaks)]
-        print(peaks)
+def poincare_plot_analysis(RR_intervals,input_type='',patient_number=None,poincare_flag=True):
+    poincare_data=[]
+    for i,peaks in enumerate(RR_intervals.T):
+        peaks = peaks[~np.isnan(peaks)]
         try:
-            result=nl.poincare(rpeaks=peaks)
+            dic=poincare_plot(peaks,input_type=input_type,patient_number=patient_number,plot_on=poincare_flag)
+            poincare_data.append(dic)
         except:
-            pass
+           continue
+    poincare_df=pd.DataFrame(poincare_data)
+    return poincare_df
 
-
-def ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path):
+def ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path,poincare_flag):
     """
     Processes and visualizes ECG-based RR interval data, before and after outlier removal.
 
@@ -1405,8 +1434,9 @@ def ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path):
     Returns:
         np.ndarray: Cleaned, flattened RR interval array.
     """
-    poincare_plot_analysis(ECG_R_peaks)
     ECG_df=ECG_HRV_info(ECG_RR,ECG_R_times)
+    poincare_df=poincare_plot_analysis(ECG_RR,input_type='ECG',patient_number=patientNum,poincare_flag=poincare_flag)
+    ECG_df=ECG_df.join(poincare_df)
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
     fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constrained')
@@ -1623,10 +1653,10 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
 def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
-    flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','patient_analysis'])
-    Flags=flags(False,False,False,False,False,True,True)
+    flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','poincare_plot_on','patient_analysis'])
+    Flags=flags(False,False,False,False,False,True,True,True)
     if Flags.plot_DFA:
-        iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.patient_analysis]
+        iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.poincare_plot_on,Flags.patient_analysis]
         Flags=flags._make(iterable)
 
     patient_data_path="/data/t/smartWatch/patients/completeData/patData"
@@ -1671,7 +1701,15 @@ def main():
                 'std_PPG_HRV_night':[],
                 'ECG_dates_and_hours':[],
                 'avg_ECG_HRV':[],
-                'std_ECG_HRV':[]}
+                'std_ECG_HRV':[],
+                'PPG_sd1':[],
+                'PPG_sd2':[],
+                'PPG_sd_ratio':[],
+                'PPG_ellipse_area':[],
+                'ECG_sd1':[],
+                'ECG_sd2':[],
+                'ECG_sd_ratio':[],
+                'ECG_ellipse_area':[]}
     surrogate_dictionary={'Patient_num':[],
                           'Surrogate_data_linear':[],
                           'Surrogate_data_noise':[]}
@@ -1695,13 +1733,13 @@ def main():
         print(patientNum)
         try:
             ECG_RR,ECG_R_times,ECG_R_peaks=patient_output(patientNum,patient=Flags.patient_analysis)
-            ECG_RR,ECG_df=ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path)
+            ECG_RR,ECG_df=ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path,Flags.poincare_plot_on)
             if ECG_RR is None or len(ECG_RR)<1000 and Flags.patient_analysis:
                 print('not enough ECG data to perform DFA analysis')
                 # scaling_patterns_ECG.loc[i]=[[],[]]
                 H_hat_ECG=(np.nan,np.nan,np.nan)
             else:
-                H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',saving_path,plot=Flags.plot_DFA)
+                H_hat_ECG,m,log_n=DFA_analysis(ECG_RR,patientNum,'ECG',saving_path,plot=Flags.plot_DFA,R_peaks=ECG_R_peaks)
                 scaling_pattern_ECG_rows.append({'patient_num':patientNum,
                                                  'gradient':m,
                                                  'log_n':log_n
@@ -1728,7 +1766,7 @@ def main():
                     })
         except Exception as e:
             print(f"PPG error for patient {patientNum}: {e}")
-            #traceback.print_exc()
+            traceback.print_exc()
             continue
         
         #surrogate_data=surrogate(RR[0])
@@ -1744,7 +1782,7 @@ def main():
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    #databasing(metrics,Flags.patient_analysis)
+    databasing(metrics,Flags.patient_analysis)
     
 
 if __name__=="__main__":
