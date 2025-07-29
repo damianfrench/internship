@@ -637,7 +637,6 @@ def plotting(data,number,data_path,saving_path,Flags=None):
 
 def poincare_plot(RR_interval,input_type='',patient_number=None,plot_on=True):
     result=nl.poincare(nni=RR_interval,mode='normal' if plot_on else 'dev')
-    print(result)
     if plot_on:
         fig=result['poincare_plot']
         ax=fig.axes[0]
@@ -858,8 +857,9 @@ def DFA_analysis(RR,patientNum,data_type,saving_path,plot=True,R_peaks=None):
         logn (np.ndarray): Corresponding log(n) values
     """
     if RR.max()>3:
+        print(data_type,patientNum,'was in seconds')
         RR=RR/1000
-    RR=(RR-np.mean(RR))/np.std(RR)
+    # RR=(RR-np.mean(RR))/np.std(RR)
     F_s,window_sizes=DFA(RR) # performs DFA on the data
     log_n=np.log10(window_sizes)
     log_F=np.log10(F_s)
@@ -1654,7 +1654,7 @@ def main():
     from scipy.fft import fft, ifft, fftshift, ifftshift
     from scipy.interpolate import interp1d
     flags=namedtuple('Flags',['months','weeks','activities','total','day_night','plot_DFA','poincare_plot_on','patient_analysis'])
-    Flags=flags(False,False,False,False,False,True,True,True)
+    Flags=flags(False,False,False,False,False,True,False,True)
     if Flags.plot_DFA:
         iterable=[Flags.months,Flags.weeks,Flags.activities,True,Flags.day_night,Flags.plot_DFA,Flags.poincare_plot_on,Flags.patient_analysis]
         Flags=flags._make(iterable)
@@ -1716,8 +1716,8 @@ def main():
     counter=0
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
-    volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549','data_DAM_1752828759']
-    for i in range(2,10):
+    volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_ART_1753720357','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549','data_DAM_1752828759']
+    for i in range(2,50):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1746,8 +1746,7 @@ def main():
                 })
         except Exception as e:
             print(f"ECG error for patient {patientNum}: {e}")
-            print(ECG_RR)
-            traceback.print_exc()
+            # traceback.print_exc()
             H_hat_ECG=(np.nan,np.nan,np.nan)
             ECG_df=pd.DataFrame()
             pass
@@ -1766,7 +1765,7 @@ def main():
                     })
         except Exception as e:
             print(f"PPG error for patient {patientNum}: {e}")
-            traceback.print_exc()
+            # traceback.print_exc()
             continue
         
         #surrogate_data=surrogate(RR[0])
