@@ -1402,7 +1402,7 @@ def ECG_HRV_info(ECG_RR,ECG_R_times):
     """
     ECG_RR_data=[]    
     for i,RR in enumerate(ECG_RR.T):
-        date=pd.to_datetime(ECG_R_times[i],format='ISO8601',utc=True).strftime('%Y-%m-%d:%H')
+        date=pd.to_datetime(ECG_R_times[i],format='ISO8601',utc=True).strftime('%Y-%m-%d')
         RR = RR[~np.isnan(RR)] # removes nans
         ECG_RR_data.append({'avg_ECG_HRV':np.mean(RR),
                             'std_ECG_HRV':np.std(RR),
@@ -1437,6 +1437,8 @@ def ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path,poincare_flag)
     ECG_df=ECG_HRV_info(ECG_RR,ECG_R_times)
     poincare_df=poincare_plot_analysis(ECG_RR,input_type='ECG',patient_number=patientNum,poincare_flag=poincare_flag)
     ECG_df=ECG_df.join(poincare_df)
+    ECG_df=ECG_df.groupby(by='ECG_dates_and_hours')[['avg_ECG_HRV','std_ECG_HRV','ECG_sd1','ECG_sd2','ECG_sd_ratio','ECG_ellipse_area']].mean()
+    print('ECG_df=',ECG_df)
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
     fig,ax=plt.subplots(1,2,figsize=(12,6),layout='constrained')
@@ -1517,15 +1519,18 @@ def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type
     new_colors=viridis(np.linspace(0,1,len(merged['patient_num'])))
     diff_matrix=np.vstack(merged['gradient_diff'].to_numpy())
     mean_diff=np.mean(diff_matrix,axis=0)
+    diff=diff_matrix[0]-diff_matrix[1]
     sem_diff=np.std(diff_matrix,axis=0)/np.sqrt(diff_matrix.shape[0])
     log_n=np.mean(np.vstack(merged['log_n_diff'].to_numpy()),axis=0)
     mask=log_n>0.55
-    ax[2].plot(log_n[mask],mean_diff[mask],label='Mean Difference', color='black')
-    ax[2].fill_between(log_n[mask],mean_diff[mask]-sem_diff[mask],mean_diff[mask]+sem_diff[mask],color='grey',alpha=0.4)
-    ax[2].axhline(0,color='k',linestyle='--')
-    ax[2].legend()
-    ax[2].set_xlabel('logged size of integral slices')
-    ax[2].set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$')
+    print(diff_matrix)
+    # ax[2].scatter(mean_diff[mask],diff[mask],label='Mean Difference', color='black')
+    # ax[2].fill_between(log_n[mask],mean_diff[mask]-sem_diff[mask],mean_diff[mask]+sem_diff[mask],color='grey',alpha=0.4)
+    # ax[2].axhline(0,color='k',linestyle='--')
+    sm.graphics.mean_diff_plot(diff_matrix[0],diff_matrix[1], ax = ax[2])
+    # ax[2].legend()
+    # ax[2].set_xlabel('logged size of integral slices')
+    # ax[2].set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$')
     ax[2].set_title('Mean difference Plot')
     
     for i,row in merged.iterrows():
@@ -1717,7 +1722,7 @@ def main():
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
     volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_ART_1753720357','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549','data_DAM_1752828759']
-    for i in range(2,50):
+    for i in range(2,10):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
