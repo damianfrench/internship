@@ -734,19 +734,30 @@ def detecting_crossover(log_F,log_n):
     """
     best_split=None
     best_score=-np.inf
+    best_balance_score=-np.inf
     results=[]
     min_points=3
-    for i in range(min_points, len(log_n) - min_points):
+    slope, intercept,r,p,se=linregress(log_n,log_F)
+    for i in range(round(len(log_n)/3), len(log_n) - min_points):
         x1, y1 = log_n[:i], log_F[:i]
         x2, y2 = log_n[i:], log_F[i:]
         slope1, _, r1, p, _ = linregress(x1, y1)
         slope2, _, r2, p, _ = linregress(x2, y2)
-        total_r_squared=r1**2+r2**2
-        balance_penalty = min(len(x1), len(x2)) / len(log_n)
-        total_r_squared *= balance_penalty
+        # total_r_squared=(r1**2+r2**2)/2
+        balance_penalty = min(len(x1),len(x2)) / len(log_n)
+        # total_r_squared *= balance_penalty
+        balence1=len(x1)/len(log_n)
+        balence2=len(x2)/len(log_n)
+        total_r_squared=(r1**2)*balence1+(r2**2)*balence2
         if total_r_squared>best_score:
             best_score=total_r_squared
+            best_balance_score=total_r_squared*balance_penalty
             best_split=(i,slope1,slope2)
+    print(r**2,best_score)
+    if best_score>r**2:
+        print('2 fits is better')
+    else:
+        print('single fit is better')
     return best_split
 
 def detecting_outliers(ECG_RR):
@@ -791,7 +802,7 @@ def DFA(RR):
         window_sizes (np.ndarray): The array of window sizes used in the DFA.
     """
 
-    window_sizes=np.unique(np.logspace(0.5, np.log10(len(RR)), 100).astype(int)) # produces an array of varying window sizes scaled for logspace
+    window_sizes=np.unique(np.logspace(0.5, np.log10(len(RR)/10), 100).astype(int)) # produces an array of varying window sizes scaled for logspace
 
     y=np.cumsum(RR - np.mean(RR)) # produces an inegration curve of each point - average
     F_s=[]
@@ -902,7 +913,7 @@ def setup_schema(cur):
     cur.execute("CREATE TABLE Daily_Vitals(Date_Vitals Integer, Patient_ID TEXT, Date TEXT, Day_avg_HR FLOAT, Day_min_HR FLOAT, Day_max_HR FLOAT, Resting_HR FLOAT, Avg_PPG_HRV_Day FLOAT, Std_PPG_HRV_Day FLOAT,UNIQUE(Patient_ID, Date), PRIMARY KEY(Date_Vitals AUTOINCREMENT), FOREIGN KEY(Patient_ID) REFERENCES Patients(Patient_ID), FOREIGN KEY(Date) REFERENCES Dates(Date))")
     cur.execute("CREATE TABLE Activities(Date_Vitals Integer, Avg_Active_HR FLOAT, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
     cur.execute("CREATE TABLE Night_Vitals(Date_Vitals Integer, Night_avg_HR FLOAT, Night_min_HR FLOAT, Night_max_HR FLOAT, Avg_PPG_HRV_Night FLOAT, Std_PPG_HRV_Night, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
-    cur.execute("CREATE TABLE ECG_Vitals(Date_Plus_Hour TEXT, Avg_ECG_HRV FLOAT, Std_ECG_HRV FLOAT,sd1 FLOAT, sd2 FLOAT, sd_Ratio FLOAT, ellipse_area FLOAT, Date_Vitals Integer, PRIMARY KEY(Date_Plus_Hour), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
+    cur.execute("CREATE TABLE ECG_Vitals( Date_Vitals Integer, Avg_ECG_HRV FLOAT, Std_ECG_HRV FLOAT,sd1 FLOAT, sd2 FLOAT, sd_Ratio FLOAT, ellipse_area FLOAT, PRIMARY KEY(Date_Vitals), FOREIGN KEY(Date_Vitals) REFERENCES Daily_Vitals(Date_Vitals))")
 
 
 
@@ -958,7 +969,6 @@ def databasing(metrics,Flag=True):
     
         try:
             dates=metrics['day_dates'][idx]
-            print('day dates',dates)
             day_avg_hrs=metrics['day_avg'][idx]
             day_min_hrs=metrics['day_min'][idx]
             day_max_hrs=metrics['day_max'][idx]
@@ -1000,19 +1010,17 @@ def databasing(metrics,Flag=True):
             print(f'error occurred with :{e}')
 
         try:
-            dates_plus_hours=metrics['ECG_dates_and_hours'][idx]
+            dates=metrics['ECG_dates'][idx]
             avg_ECG_HRVs=metrics['avg_ECG_HRV'][idx]
             std_ECG_HRVs=metrics['std_ECG_HRV'][idx]
             sd1s=metrics['ECG_sd1'][idx]
             sd2s=metrics['ECG_sd2'][idx]
             sd_ratios=metrics['ECG_sd_ratio'][idx]
             ellipse_areas=metrics['ECG_ellipse_area'][idx]
-            for date_plus_hour,avg_ECG_HRV,std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area in zip(split_on_colon(dates_plus_hours),avg_ECG_HRVs,std_ECG_HRVs,sd1s,sd2s,sd_ratios,ellipse_areas):
-                
-                date_vitals_id=cur.execute("""SELECT Date_Vitals FROM Daily_Vitals WHERE Patient_ID=? AND Date=?""",(patient_id,date_plus_hour[0])).fetchone()
+            for date,avg_ECG_HRV,std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area in zip(dates,avg_ECG_HRVs,std_ECG_HRVs,sd1s,sd2s,sd_ratios,ellipse_areas):
+                date_vitals_id=cur.execute("""SELECT Date_Vitals FROM Daily_Vitals WHERE Patient_ID=? AND Date=?""",(patient_id,date)).fetchone()
                 if date_vitals_id:
-                    date_with_hour=':'.join(date_plus_hour)
-                    cur.execute("""INSERT OR IGNORE INTO ECG_Vitals(Date_Plus_Hour, Avg_ECG_HRV, Std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area, Date_Vitals) VALUES(?,?,?,?,?,?,?,?)""",(date_with_hour, avg_ECG_HRV, std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area, date_vitals_id[0]))
+                    cur.execute("""INSERT OR IGNORE INTO ECG_Vitals(Date_Vitals, Avg_ECG_HRV, Std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area) VALUES(?,?,?,?,?,?,?)""",(date_vitals_id[0], avg_ECG_HRV, std_ECG_HRV,sd1,sd2,sd_ratio,ellipse_area))
         
         except Exception as e:
             print(f'error occured with: {e}')
@@ -1196,7 +1204,10 @@ def appending_metrics(metrics_dict,fields,patientNum,data):
     elif type(data)==pd.core.frame.DataFrame:
         try:
             for key in fields:
-                metrics_dict[key].append(data[key].to_numpy())
+                if len(data)==1:
+                    metrics_dict[key].append(float(data[key]))
+                else:
+                    metrics_dict[key].append(data[key].to_numpy())
         except Exception as e:
             print(f"day_data error for patient {patientNum}: {e}")
             for key in fields:
@@ -1257,7 +1268,7 @@ def adding_to_dictionary(metrics,patientNum,RR,H_hat,H_hat_ECG,ECG_df):
     metrics=appending_metrics(metrics,['day_dates','day_avg','day_min','day_max','resting_hr','avg_PPG_HRV_day','std_PPG_HRV_day'],patientNum,day_df)
     metrics=appending_metrics(metrics,['night_dates','night_avg','night_min','night_max','avg_PPG_HRV_night','std_PPG_HRV_night'],patientNum,night_df)
     metrics=appending_metrics(metrics,['PPG_sd1','PPG_sd2','PPG_sd_ratio','PPG_ellipse_area'],patientNum,poincare_df)
-    metrics=appending_metrics(metrics,['ECG_dates_and_hours','avg_ECG_HRV','std_ECG_HRV','ECG_sd1','ECG_sd2','ECG_sd_ratio','ECG_ellipse_area'],patientNum,ECG_df)
+    metrics=appending_metrics(metrics,['ECG_dates','avg_ECG_HRV','std_ECG_HRV','ECG_sd1','ECG_sd2','ECG_sd_ratio','ECG_ellipse_area'],patientNum,ECG_df)
 
 
     metrics['scaling_exponent_noise'].append(H_hat[0])
@@ -1406,7 +1417,7 @@ def ECG_HRV_info(ECG_RR,ECG_R_times):
         RR = RR[~np.isnan(RR)] # removes nans
         ECG_RR_data.append({'avg_ECG_HRV':np.mean(RR),
                             'std_ECG_HRV':np.std(RR),
-                            'ECG_dates_and_hours':date})
+                            'ECG_dates':date})
     ECG_RR_df=pd.DataFrame(ECG_RR_data)
     return ECG_RR_df
 
@@ -1437,7 +1448,7 @@ def ECG_HRV(ECG_RR,ECG_R_times,ECG_R_peaks,patientNum,saving_path,poincare_flag)
     ECG_df=ECG_HRV_info(ECG_RR,ECG_R_times)
     poincare_df=poincare_plot_analysis(ECG_RR,input_type='ECG',patient_number=patientNum,poincare_flag=poincare_flag)
     ECG_df=ECG_df.join(poincare_df)
-    ECG_df=ECG_df.groupby(by='ECG_dates_and_hours')[['avg_ECG_HRV','std_ECG_HRV','ECG_sd1','ECG_sd2','ECG_sd_ratio','ECG_ellipse_area']].mean()
+    ECG_df=ECG_df.groupby(by='ECG_dates')[['avg_ECG_HRV','std_ECG_HRV','ECG_sd1','ECG_sd2','ECG_sd_ratio','ECG_ellipse_area']].mean().reset_index()
     print('ECG_df=',ECG_df)
     ECG_RR=(ECG_RR[:,:len(ECG_RR[0])-1].T).flatten()
     ECG_RR = ECG_RR[~np.isnan(ECG_RR)] # removes nans
@@ -1523,7 +1534,6 @@ def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type
     sem_diff=np.std(diff_matrix,axis=0)/np.sqrt(diff_matrix.shape[0])
     log_n=np.mean(np.vstack(merged['log_n_diff'].to_numpy()),axis=0)
     mask=log_n>0.55
-    print(diff_matrix)
     # ax[2].scatter(mean_diff[mask],diff[mask],label='Mean Difference', color='black')
     # ax[2].fill_between(log_n[mask],mean_diff[mask]-sem_diff[mask],mean_diff[mask]+sem_diff[mask],color='grey',alpha=0.4)
     # ax[2].axhline(0,color='k',linestyle='--')
@@ -1575,7 +1585,6 @@ def scaling_pattern_difference_analysis(df,ax):
         log_n_avg(np.ndarray): Array of mean log(n) values to be used as the x axis
         gradient_range(np.ndarrray): Array of ranges of gradient_differences for each value of log(n)
     """
-    print(df)
     df[['interpolated_log_n','interpolated_gradient']]=df.apply(lambda row: interpolating_for_uniform(np.array(row['log_n_diff']), np.array(row['gradient_diff']),2,3), axis=1,result_type='expand')
     # analysing_data=np.array(list(zip(df['interpolated_log_n'],df['interpolated_gradient'].to_numpy())))
     # print(analysing_data)
@@ -1628,10 +1637,10 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     else:
         ax[0].set_ylim(0,2)
 
-    print('avg grad 1',avg_gradient1)
-    print('avg grad 2',avg_gradient2)
-    print('avg log 1',avg_log_n1)
-    print('avg log 2',avg_log_n2)
+    # print('avg grad 1',avg_gradient1)
+    # print('avg grad 2',avg_gradient2)
+    # print('avg log 1',avg_log_n1)
+    # print('avg log 2',avg_log_n2)
     ax[0].errorbar(avg_log_n1[mask], avg_gradient1[mask], yerr=std1[mask], fmt='-', label=f'Average Scaling Pattern - {type1}', color='blue', capsize=5,zorder=1)
     ax[0].errorbar(avg_log_n2[mask], avg_gradient2[mask], yerr=std2[mask], fmt='-', label=f'Average Scaling Pattern - {type2}', color='orange', capsize=5,zorder=1)
 
@@ -1704,7 +1713,7 @@ def main():
                 'std_PPG_HRV_day':[],
                 'avg_PPG_HRV_night':[],
                 'std_PPG_HRV_night':[],
-                'ECG_dates_and_hours':[],
+                'ECG_dates':[],
                 'avg_ECG_HRV':[],
                 'std_ECG_HRV':[],
                 'PPG_sd1':[],
@@ -1722,7 +1731,7 @@ def main():
     scaling_pattern_ECG_rows=[]
     scaling_pattern_PPG_rows=[]
     volunteer_nums=['data_001_1636025623','data_CHE_1753362494','data_AMC_1633769065','data_ART_1753720357','data_AMC_1636023599','data_LEE_1636026567','data_DAM_1753261083','data_JAS_1753260728','data_CHA_1753276549','data_DAM_1752828759']
-    for i in range(2,10):
+    for i in range(2,50):
         print(i)
         if Flags.patient_analysis:
             if i==42 or i==24:
@@ -1770,7 +1779,7 @@ def main():
                     })
         except Exception as e:
             print(f"PPG error for patient {patientNum}: {e}")
-            # traceback.print_exc()
+            traceback.print_exc()
             continue
         
         #surrogate_data=surrogate(RR[0])
