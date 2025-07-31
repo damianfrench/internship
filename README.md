@@ -30,4 +30,8 @@ Update ***saving_path*** with the location you wish to save the plots generated 
 
 This pipeline requires ECG analysis from ***patient_analysis3.py***<br>
 The code runs from the ***main()*** function, but is modular and can be used in parts with minimal preprocessing - ECG analysis requires more preprocessing but is easily seen in the afformentioned function.<br>
-***Flags*** is an instance of the named tuple ***flags*** which is used to control when plots should be created. It is changed by ammending the Bools in the instantiation at the beginning of ***main***. Most functions have a Flags default but check the docstrings to avoid errors when using in a modular form.
+***Flags*** is an instance of the named tuple ***flags*** which is used to control when plots should be created. It is changed by ammending the Bools in the instantiation at the beginning of ***main***. Most functions have a Flags default but check the docstrings to avoid errors when using in a modular form.<br><br>
+
+### Database
+The Database created from all the determined metrics is by default created in the same folder as the pipeline script. This can be changed simply by adding the path into the line defining the database: ***db_name = 'patient_metrics.db' if Flag else 'volunteer_metrics.db'*** on line **946**.<br>
+The Database is a Relational Database normalised to 3NF, and the database diagram is seen bellow:
