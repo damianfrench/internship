@@ -26,3 +26,8 @@ Update ***saving_path*** with the location you wish to save the plots generated 
 [csv](https://docs.python.org/3/library/csv.html)<br>
 [warnings](https://docs.python.org/3/library/warnings.html)<br>
 
+## Using The Pipeline
+
+This pipeline requires ECG analysis from ***patient_analysis3.py***<br>
+The code runs from the ***main()*** function, but is modular and can be used in parts with minimal preprocessing - ECG analysis requires more preprocessing but is easily seen in the afformentioned function.<br>
+***Flags*** is an instance of the named tuple ***flags*** which is used to control when plots should be created. It is changed by ammending the Bools in the instantiation at the beginning of ***main***. Most functions have a Flags default but check the docstrings to avoid errors when using in a modular form.
