@@ -11,7 +11,7 @@ Update ***saving_path*** with the location you wish to save the plots generated 
 
 ### Required Packages
 
-[numpy](https://pypi.org/project/numpy/)
+[numpy](https://pypi.org/project/numpy/)<br>
 [matplotlib.pyplot](https://pypi.org/project/matplotlib/)
 [pandas](https://pypi.org/project/pandas/)
 [pathlib](https://pypi.org/project/pathlib/)
