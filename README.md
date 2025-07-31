@@ -36,3 +36,7 @@ The code runs from the ***main()*** function, but is modular and can be used in 
 The Database created from all the determined metrics is by default created in the same folder as the pipeline script. This can be changed simply by adding the path into the line defining the database: ***db_name = 'patient_metrics.db' if Flag else 'volunteer_metrics.db'*** on line **946**.<br>
 The Database is a Relational Database normalised to 3NF, and the database diagram is seen bellow:
 ![Database Diagram](database_diagram.png)
+
+# DFA analysis
+
+The DFA analysis uses R squared linear regression to fit 2 straight lines to the data,finding the point where the two lines produce the greatest weighted R squared. This method, whilst valid, is not necessarily the correct method, and it may in fact be better to define the crossover region either exactly or much more specifically than it currently i so this can be very simply changed in the function ***detecting_crossover***.
