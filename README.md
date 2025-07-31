@@ -35,3 +35,4 @@ The code runs from the ***main()*** function, but is modular and can be used in 
 ### Database
 The Database created from all the determined metrics is by default created in the same folder as the pipeline script. This can be changed simply by adding the path into the line defining the database: ***db_name = 'patient_metrics.db' if Flag else 'volunteer_metrics.db'*** on line **946**.<br>
 The Database is a Relational Database normalised to 3NF, and the database diagram is seen bellow:
+![Database Diagram](internship/database_diagram.png)
