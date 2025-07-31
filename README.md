@@ -12,15 +12,15 @@ Update ***saving_path*** with the location you wish to save the plots generated 
 ### Required Packages
 
 [numpy](https://pypi.org/project/numpy/)<br>
-[matplotlib.pyplot](https://pypi.org/project/matplotlib/)
-[pandas](https://pypi.org/project/pandas/)
-[pathlib](https://pypi.org/project/pathlib/)
-[scipy](https://pypi.org/project/scipy/)
-[datetime](https://docs.python.org/3/library/datetime.html)
-[sqlite3](https://docs.python.org/3/library/sqlite3.html)
-[sys](https://docs.python.org/3/library/sys.html)
-[traceback](https://docs.python.org/3/library/traceback.html)
-[collections](https://docs.python.org/3/library/collections.html)
-[statsmodels.api](https://pypi.org/project/statsmodels/)
-[pyhrv.nonlinear](https://pypi.org/project/pyhrv/)
+[matplotlib.pyplot](https://pypi.org/project/matplotlib/)<br>
+[pandas](https://pypi.org/project/pandas/)<br>
+[pathlib](https://pypi.org/project/pathlib/)<br>
+[scipy](https://pypi.org/project/scipy/)<br>
+[datetime](https://docs.python.org/3/library/datetime.html)<br>
+[sqlite3](https://docs.python.org/3/library/sqlite3.html)<br>
+[sys](https://docs.python.org/3/library/sys.html)<br>
+[traceback](https://docs.python.org/3/library/traceback.html)<br>
+[collections](https://docs.python.org/3/library/collections.html)<br>
+[statsmodels.api](https://pypi.org/project/statsmodels/)<br>
+[pyhrv.nonlinear](https://pypi.org/project/pyhrv/)<br>
 
