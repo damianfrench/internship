@@ -8,7 +8,6 @@ from scipy.optimize import curve_fit
 from scipy.stats import norm
 from scipy.stats import linregress
 from scipy.stats import spearmanr
-from MFDFA import MFDFA
 from datetime import datetime
 import csv
 import sqlite3
@@ -1801,7 +1800,7 @@ def main():
     plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',saving_path,Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    #databasing(metrics,Flags.patient_analysis)
+    databasing(metrics,Flags.patient_analysis)
     
 
 if __name__=="__main__":
