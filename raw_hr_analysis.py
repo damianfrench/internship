@@ -734,7 +734,7 @@ def detecting_crossover(log_F,log_n):
     """
     best_split=None
     best_score=-np.inf
-    best_balance_score=-np.inf
+    best_balanced_score=-np.inf
     results=[]
     min_points=3
     slope, intercept,r,p,se=linregress(log_n,log_F)
@@ -749,9 +749,9 @@ def detecting_crossover(log_F,log_n):
         balence1=len(x1)/len(log_n)
         balence2=len(x2)/len(log_n)
         total_r_squared=(r1**2)*balence1+(r2**2)*balence2
-        if total_r_squared>best_score:
+        if total_r_squared*balance_penalty>best_balanced_score:
             best_score=total_r_squared
-            best_balance_score=total_r_squared*balance_penalty
+            best_balanced_score=total_r_squared*balance_penalty
             best_split=(i,slope1,slope2)
     print(r**2,best_score)
     if best_score>r**2:
@@ -1541,7 +1541,7 @@ def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type
     # ax[2].legend()
     # ax[2].set_xlabel('logged size of integral slices')
     # ax[2].set_ylabel('difference in gradient at each value of n -$\\Delta m_e(n)$')
-    ax[2].set_title('Mean difference Plot')
+    ax[2].set_title('Mean difference Plot of difference in gradients')
     
     for i,row in merged.iterrows():
         x=row['log_n_diff']
@@ -1567,7 +1567,10 @@ def plotting_scaling_pattern_difference(scaling_patterns1,scaling_patterns2,type
     plt.tight_layout(pad=3.0)
     plt.subplots_adjust(hspace=0.4)  # Optional fine-tuning
     plt.show()
-    fig.savefig(f"{saving_path}/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-difference.png")
+    try:
+        fig.savefig(f"{saving_path}/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-difference.png")
+    except:
+        fig.savefig(f"{saving_path}/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-difference.png")
     plt.close()
 
 
@@ -1585,7 +1588,7 @@ def scaling_pattern_difference_analysis(df,ax):
         log_n_avg(np.ndarray): Array of mean log(n) values to be used as the x axis
         gradient_range(np.ndarrray): Array of ranges of gradient_differences for each value of log(n)
     """
-    df[['interpolated_log_n','interpolated_gradient']]=df.apply(lambda row: interpolating_for_uniform(np.array(row['log_n_diff']), np.array(row['gradient_diff']),2,3), axis=1,result_type='expand')
+    df[['interpolated_log_n','interpolated_gradient']]=df.apply(lambda row: interpolating_for_uniform(np.array(row['log_n_diff']), np.array(row['gradient_diff']),max(row['log_n_diff'])/3,2*max(row['log_n_diff']/3)), axis=1,result_type='expand')
     # analysing_data=np.array(list(zip(df['interpolated_log_n'],df['interpolated_gradient'].to_numpy())))
     # print(analysing_data)
     # print(analysing_data[:,0])
@@ -1598,7 +1601,7 @@ def scaling_pattern_difference_analysis(df,ax):
 
 
 
-def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,patient=True,DFA_on=True):
+def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,type2,saving_path,patient=True,DFA_on=True):
     """
     Plots the average scaling pattern from a DataFrame of scaling patterns.
 
@@ -1659,7 +1662,10 @@ def plotting_average_scaling_pattern(scaling_patterns1,scaling_patterns2,type1,t
     ax[1].set_ylabel('ECG scaling pattern')
     ax[1].set_title('Correlation plot for scaling patterns')
     plt.show()
-    fig.savefig(f"/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png")
+    try:
+        fig.savefig(f"{saving_path}/Graphs/scaling_patterns/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png")
+    except:
+        fig.savefig(f"{saving_path}/{'patients' if patient==True else 'volunteers'}-{type1}-{type2}-average.png")
     plt.close()
     return avg_gradient1,avg_gradient2,avg_log_n1,avg_log_n2
 
@@ -1792,18 +1798,14 @@ def main():
     scaling_patterns_ECG=pd.DataFrame(scaling_pattern_ECG_rows)
     scaling_patterns_PPG=pd.DataFrame(scaling_pattern_PPG_rows)
     plotting_scaling_pattern_difference(scaling_patterns_ECG,scaling_patterns_PPG,'ECG','PPG',saving_path,Flags.patient_analysis,Flags.plot_DFA)
-    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',Flags.patient_analysis,Flags.plot_DFA)
+    plotting_average_scaling_pattern(scaling_patterns_PPG,scaling_patterns_ECG,'PPG','ECG',saving_path,Flags.patient_analysis,Flags.plot_DFA)
     #print(surrogate_dictionary)
     #surrogate_databasing(surrogate_dictionary,'IAAFT')
-    databasing(metrics,Flags.patient_analysis)
+    #databasing(metrics,Flags.patient_analysis)
     
 
 if __name__=="__main__":
     main()
     
 
-"""
-inputs are /data/t/smartWatch
-outputs write to same place
-"""
 # %%

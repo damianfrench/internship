@@ -182,7 +182,7 @@ def comparing_scaling_exponents(cur,type):
     plt.grid()
     se_linear= se_linear[~np.isnan(se_linear)]
     se_noise= se_noise[~np.isnan(se_noise)]
-    v1=violin_plot([se_linear-se_noise],[1],'#D43F3A',alpha=1)
+    #v1=violin_plot([se_linear-se_noise],[1],'#D43F3A',alpha=1)
     v2=violin_plot([scaling_exponent_linear(cur,'')-scaling_exponent_noise(cur,'')],[2],color="#683AD4",alpha=1)
     plt.legend([v1['bodies'][0],v2['bodies'][0]], [ 'ECG data','HR data'], loc=3)
 
@@ -205,7 +205,7 @@ def scaling_exponent_noise(cur,type):
     return np.array(se,dtype=np.float64)
 
 def Patients(cur):
-    n=cur.execute("SELECT Number from Patients").fetchall()
+    n=cur.execute("SELECT Patient_ID from Patients").fetchall()
     n=np.array(n).flatten()
     return n
 
@@ -584,7 +584,7 @@ def Gaussian_mixing(data):
     return features['gmm_cluster'],[Group1_mask,Group2_mask,Group3_mask,Group4_mask,Group5_mask]
 def main():
     type='ECG_'
-    con=sqlite3.connect('volunteer_metrics.db') # opens database
+    con=sqlite3.connect('patient_metrics.db') # opens database
     cur=con.cursor()
     #months_hr(cur,con)
     #weeks_hr(con,cur)
@@ -592,9 +592,9 @@ def main():
     # se=scaling_exponent(cur)
     # histogram(se,'scalingLinear')
 
-    #comparing_scaling_exponents(cur,type)
-    # print('T-test with mean of 0 as null')
-    # t_test(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'),0)
+    comparing_scaling_exponents(cur,type)
+    print('T-test with mean of 0 as null')
+    t_test(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'),0)
     # shapiro_testing(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'))
     # print('T-test with HR mean as null')
     # t_test(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'),scaling_exponent_linear(cur,'')-scaling_exponent_noise(cur,''))
@@ -603,7 +603,7 @@ def main():
     #week_analysis(cur,Group_masks,nan_mask,4)
     #night_analysis(cur)
     #DayVsNight_analysis(cur)
-    crossover(cur)
+    #crossover(cur)
     #resting_hr(cur)
     #comparing_scaling_in_patients_and_volunteers()
 
