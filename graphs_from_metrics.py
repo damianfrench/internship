@@ -1,3 +1,5 @@
+#%%
+
 import numpy as np
 import matplotlib.pyplot as plt
 import sqlite3
@@ -180,7 +182,7 @@ def comparing_scaling_exponents(cur,type):
     plt.grid()
     se_linear= se_linear[~np.isnan(se_linear)]
     se_noise= se_noise[~np.isnan(se_noise)]
-    v1=violin_plot([se_linear-se_noise],[1],'#D43F3A',alpha=1)
+    #v1=violin_plot([se_linear-se_noise],[1],'#D43F3A',alpha=1)
     v2=violin_plot([scaling_exponent_linear(cur,'')-scaling_exponent_noise(cur,'')],[2],color="#683AD4",alpha=1)
     plt.legend([v1['bodies'][0],v2['bodies'][0]], [ 'ECG data','HR data'], loc=3)
 
@@ -203,7 +205,7 @@ def scaling_exponent_noise(cur,type):
     return np.array(se,dtype=np.float64)
 
 def Patients(cur):
-    n=cur.execute("SELECT Number from Patients").fetchall()
+    n=cur.execute("SELECT Patient_ID from Patients").fetchall()
     n=np.array(n).flatten()
     return n
 
@@ -376,14 +378,18 @@ def fetching_week_data(cur,mask,nan_mask):
     df_weeks.rename(columns={df_weeks.columns[0]:'Patient_number'},inplace=True) # creates a dataframe containing the week data for the specific group wanted
     return df_weeks
 
-def fetching_patient_data(cur,nan_mask,mask):
+def fetching_patient_data(cur,nan_mask,mask,columns,table):
+    if not columns:
+        colums=['*']
+    columns_str=', '.join(columns)
+    sql=f"SELECT {columns_str} FROM {table}"
     if len(mask)!=0:
-        Group_data=np.array(cur.execute("SELECT * FROM Patients").fetchall())[nan_mask][mask]
+        Group_data=np.array(cur.execute(sql).fetchall())[nan_mask][mask]
     else:
-        Group_data=np.array(cur.execute("SELECT * FROM Patients").fetchall())
-    df_patients=pd.DataFrame(Group_data)
-    df_patients=df_patients.drop(columns=0)
+        Group_data=np.array(cur.execute(sql).fetchall())
+    df_patients=pd.DataFrame(Group_data,columns=columns)
     return df_patients
+
 
 def fetching_DayAndNight_data(cur,patient_num):
     if patient_num!='all':
@@ -402,6 +408,17 @@ def fetching_DayAndNight_data(cur,patient_num):
     return df
 
 
+def comparing_scaling_in_patients_and_volunteers():
+    patient_con=sqlite3.connect('patient_metrics.db')
+    patient_cur=patient_con.cursor()
+    patient_data=fetching_patient_data(patient_cur,[],[],['Number','scaling_exponent_noise','scaling_exponent_linear','ECG_scaling_exponent_noise','ECG_scaling_exponent_linear'],'Patients')
+    patient_data=patient_data.apply(pd.to_numeric,errors='coerce')
+    volunteer_con=sqlite3.connect('volunteer_metrics.db')
+    volunteer_cur=volunteer_con.cursor()
+    volunteer_data=fetching_patient_data(volunteer_cur,[],[],['Number','scaling_exponent_noise','scaling_exponent_linear','ECG_scaling_exponent_noise','ECG_scaling_exponent_linear'],'Patients')
+    volunteer_data=volunteer_data.apply(pd.to_numeric,errors='coerce')
+    print(patient_data)
+    print(volunteer_data)
 
 def week_analysis(cur,masks,nan_mask,Group_num):
     print(fetching_patient_data(cur,nan_mask,masks[Group_num]))
@@ -457,28 +474,52 @@ def graphing_day_and_night(cur,df):
         plt.close()
 
 def crossover(cur):
-    df_volunteers=fetching_patient_data(cur,[],[])
-    df_patients=np.array(fetching_patient_data(sqlite3.connect('patient_metrics.db').cursor(),[],[]))
-    df_volunteers=np.array(df_volunteers.drop(index=2))
-    #t_test(df_patients[:,7],df_volunteers[:,7].astype(np.float64))
-    print(df_volunteers[:,0])
-    x_axis=df_patients[:,0]
-    print(len(x_axis))
-    print(df_volunteers[:,7].astype(np.float64))
-    plt.xlabel('Patient number')
-    plt.tick_params(axis='x',labelrotation=-90,length=0.1)
-    plt.axhline(np.mean(df_patients[:,7].astype(np.float64)),color='blue',label='average PPT patient crossover')
+    df_volunteers=fetching_patient_data(cur,[],[],['Number','crossover_PPG','crossover_ECG'],'Patients')
+    df_patients=fetching_patient_data(sqlite3.connect('patient_metrics.db').cursor(),[],[],['Number','crossover_PPG','crossover_ECG'],'Patients')
+    df_patients=df_patients.apply(pd.to_numeric,errors='coerce')
+    df_volunteers['crossover_ECG']=pd.to_numeric(df_volunteers['crossover_ECG'],errors='coerce')
+    df_volunteers['crossover_PPG']=pd.to_numeric(df_volunteers['crossover_PPG'],errors='coerce')
+
+
+    # df_volunteers=np.array(df_volunteers.drop(index=2))
+
+    # t_test(df_patients[:,7],df_volunteers[:,7].astype(np.float64))
+    x_axis1=df_patients['Number']
+    x_axis2=np.arange(0,len(df_volunteers['Number']),1)
+    fig,ax=plt.subplots(2,2,figsize=(12,8),layout='constrained')
+    ax[0][0].set_xlabel('Patient number')
+    ax[0][0].tick_params(axis='x',labelrotation=-90,length=0.1)
+    ax[0][0].axhline(np.mean(df_patients['crossover_PPG'].astype(np.float64)),color='blue',label='average PPG patient crossover')
+    print(f'Patient PPG p value:{shapiro_testing(df_patients['crossover_PPG'])}')
+    print(f'Patient ECG p value:{shapiro_testing(df_patients['crossover_ECG'])}')
+    print(f'volunteer PPG p value:{shapiro_testing(df_volunteers['crossover_PPG'])}')
+    print(f'volunteer ECG p value:{shapiro_testing(df_volunteers['crossover_ECG'])}')
+
+    ax[0][0].set_ylabel('crossover point')
+    ax[0][0].set_title('crossover points on DFA graph for patients')
+    ax[0][0].scatter(x_axis1,df_patients['crossover_PPG'].astype(np.float64),color='blue',label='PPG patient crossovers')
+    ax[0][0].scatter(x_axis1,df_patients['crossover_ECG'].astype(np.float64),color='orange',label='ECG patient crossovers')
+    ax[0][0].axhline(np.mean(df_patients['crossover_ECG'].astype(np.float64)),color='orange',label='average ECG patient crossover')
     
-    plt.ylabel('crossover point')
-    plt.title('crossover points on DFA graph for patients')
-    plt.scatter(x_axis,df_patients[:,7].astype(np.float64),color='blue',label='PPT patient crossovers')
-    plt.scatter(x_axis,df_patients[:,8].astype(np.float64),color='orange',label='PPT patient crossovers')
-    plt.axhline(np.mean(df_patients[:,8].astype(np.float64)),color='orange',label='average ECG patient crossover')
-    plt.legend()
-    #plt.scatter(x_axis,df[:,8].astype(np.float64))
-    
-    plt.tight_layout()
-    plt.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/testing_metrics/crossovers.png')
+
+    ax[0][1].scatter(x_axis2,df_volunteers['crossover_PPG'].astype(np.float64),color='blue',label='PPG patient crossovers')
+    ax[0][1].scatter(x_axis2,df_volunteers['crossover_ECG'].astype(np.float64),color='orange',label='ECG patient crossovers')
+    ax[0][1].set_xticks(x_axis2,df_volunteers['Number'])
+    ax[0][1].tick_params(axis='x',labelrotation=-90,length=0.08)
+    ax[0][1].set_xlabel('Volunteer Label')
+    ax[0][1].set_ylabel('crossover point')
+    ax[0][1].set_title('crossover points on DFA graph for Volunteers')
+
+
+
+
+    df_patients.plot(kind='box',x='Number',y=['crossover_PPG','crossover_ECG'],ax=ax[1][0],title='Patient Box Plots')
+    df_volunteers.plot(kind='box',x='Number',y=['crossover_PPG','crossover_ECG'],ax=ax[1][1],title='Volunteer Box Plots')
+
+
+    ax[0][0].legend()
+    ax[0][1].legend()
+    fig.savefig('/data/t/smartWatch/patients/completeData/DamianInternshipFiles/Graphs/testing_metrics/crossovers.png')
 
 
 def group_analysis(df,x_var,y_var,Group_num,normalised=True,index='Patient_number'):
@@ -551,9 +592,9 @@ def main():
     # se=scaling_exponent(cur)
     # histogram(se,'scalingLinear')
 
-    #comparing_scaling_exponents(cur,type)
-    # print('T-test with mean of 0 as null')
-    # t_test(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'),0)
+    comparing_scaling_exponents(cur,type)
+    print('T-test with mean of 0 as null')
+    t_test(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'),0)
     # shapiro_testing(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'))
     # print('T-test with HR mean as null')
     # t_test(scaling_exponent_linear(cur,'ECG_')-scaling_exponent_noise(cur,'ECG_'),scaling_exponent_linear(cur,'')-scaling_exponent_noise(cur,''))
@@ -563,11 +604,15 @@ def main():
     #night_analysis(cur)
     #DayVsNight_analysis(cur)
     #crossover(cur)
-    resting_hr(cur)
-
+    #resting_hr(cur)
+    #comparing_scaling_in_patients_and_volunteers()
 
 
 
 
 if __name__=="__main__":
     main()  
+
+#%%
+
+
