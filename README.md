@@ -5,6 +5,7 @@ This pipeline takes in paths to folders containing the data from **Withings Scan
 ## Setting Up
 
 Download and unzip the user data from the smartwatches, either via the app or the website. 
+Main Pipeline is within the **raw_hr_analysis.py** file
 Update ***patient_data_path*** with the path to the folder and ***volunteer_data_path*** if relevent.
 Update ***sys.path*** statement at beginning of code to the location of the ***patient_analysis3*** python script for ECG analysis.
 Update ***saving_path*** with the location you wish to save the plots generated to.
