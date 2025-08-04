@@ -40,6 +40,8 @@ The Database is a Relational Database normalised to 3NF, and the database diagra
 
 # DFA analysis
 
+### Bugs
+
 The DFA analysis uses R squared linear regression to fit 2 straight lines to the data,finding the point where the two lines produce the greatest weighted R squared. This method, whilst valid, is not necessarily the correct method, and it may in fact be better to define the crossover region either exactly or much more specifically than it currently i so this can be very simply changed in the function ***detecting_crossover***.
 
 
